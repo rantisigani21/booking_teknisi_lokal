@@ -12,8 +12,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata = {
-  title: "Admin Dashboard - Booking Teknisi Lokal",
-  description: "Panel administrasi untuk aplikasi Booking Teknisi Lokal",
+  title: "Booking Teknisi Lokal — Layanan Servis Komputer, Laptop & Elektronik",
+  description: "Platform pemesanan jasa teknisi panggilan terpercaya di area Kota Malang. Cepat, transparan, dan bergaransi resmi.",
 };
 
 export default function RootLayout({ children }) {

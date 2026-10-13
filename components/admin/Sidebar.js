@@ -33,8 +33,13 @@ export default function Sidebar({ isOpen, onClose }) {
 
   const handleLogout = () => {
     if (confirm("Apakah Anda yakin ingin keluar dari sistem admin?")) {
+      try {
+        localStorage.removeItem("admin_auth");
+      } catch (e) {
+        console.error(e);
+      }
       alert("Anda telah berhasil keluar dari sistem.");
-      router.push("/admin");
+      router.push("/admin/login");
     }
   };
 

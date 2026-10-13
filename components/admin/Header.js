@@ -52,8 +52,27 @@ export default function Header({ onMenuClick }) {
         </div>
       </div>
 
-      {/* Right: Admin Avatar & Name */}
+      {/* Right: Role Switcher & Admin Avatar */}
       <div className="flex items-center gap-3">
+        {/* Role Switcher Pill */}
+        <div className="hidden lg:flex items-center bg-slate-100 p-0.5 rounded-lg text-xs font-semibold">
+          <span className="px-2.5 py-1 bg-white text-blue-600 rounded-md shadow-xs">
+            Admin
+          </span>
+          <Link
+            href="/pelanggan"
+            className="px-2.5 py-1 text-slate-600 hover:text-slate-900 rounded-md transition-colors"
+          >
+            Pelanggan
+          </Link>
+          <Link
+            href="/teknisi"
+            className="px-2.5 py-1 text-slate-600 hover:text-slate-900 rounded-md transition-colors"
+          >
+            Teknisi
+          </Link>
+        </div>
+
         <Link
           href="/admin/profil"
           className="flex items-center gap-2.5 p-1.5 pr-2.5 rounded-lg hover:bg-slate-100 transition-colors border border-transparent hover:border-slate-200"
