@@ -1,5 +1,6 @@
 import { query } from "@/lib/db";
 import { successResponse, errorResponse } from "@/lib/apiResponse";
+import { requireAuth } from "@/lib/auth";
 
 
 // GET /api/teknisi
@@ -90,8 +91,11 @@ export async function GET(request) {
   }
 }
 
-// POST /api/teknisi
+// POST /api/teknisi — hanya admin
 export async function POST(request) {
+  const authError = await requireAuth(["admin"]);
+  if (authError) return authError;
+
   try {
     const body = await request.json();
     const {

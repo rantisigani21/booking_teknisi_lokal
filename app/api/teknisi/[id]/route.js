@@ -1,5 +1,6 @@
 import { query } from "@/lib/db";
 import { successResponse, errorResponse } from "@/lib/apiResponse";
+import { requireAuth, getSession } from "@/lib/auth";
 
 
 // GET /api/teknisi/[id]
@@ -88,10 +89,26 @@ export async function GET(request, { params }) {
   }
 }
 
-// PUT /api/teknisi/[id]
+// PUT /api/teknisi/[id] — admin atau teknisi itu sendiri
 export async function PUT(request, { params }) {
+  const authError = await requireAuth(["admin", "teknisi"]);
+  if (authError) return authError;
+
+  const session = await getSession();
+  const { id } = await params;
+
+  // Teknisi hanya bisa edit profil sendiri (cek via user_id)
+  if (session.role === "teknisi") {
+    const [myProfile] = await query(
+      "SELECT id FROM teknisi WHERE id = ? AND user_id = ? LIMIT 1",
+      [id, session.id]
+    );
+    if (!myProfile) {
+      return errorResponse("Anda hanya dapat mengubah profil teknisi milik Anda sendiri.", 403);
+    }
+  }
+
   try {
-    const { id } = await params;
     const body = await request.json();
     const {
       deskripsi,
@@ -146,8 +163,11 @@ export async function PUT(request, { params }) {
   }
 }
 
-// DELETE /api/teknisi/[id]
+// DELETE /api/teknisi/[id] — hanya admin
 export async function DELETE(request, { params }) {
+  const authError = await requireAuth(["admin"]);
+  if (authError) return authError;
+
   try {
     const { id } = await params;
 

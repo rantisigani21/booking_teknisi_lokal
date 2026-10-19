@@ -1,10 +1,14 @@
 import bcrypt from "bcryptjs";
 import { query } from "@/lib/db";
 import { successResponse, errorResponse } from "@/lib/apiResponse";
+import { requireAuth } from "@/lib/auth";
 
 
-// GET /api/users
+// GET /api/users — hanya admin
 export async function GET(request) {
+  const authError = await requireAuth(["admin"]);
+  if (authError) return authError;
+
   try {
     const { searchParams } = new URL(request.url);
     const role = searchParams.get("role");
@@ -55,8 +59,11 @@ export async function GET(request) {
   }
 }
 
-// POST /api/users
+// POST /api/users — hanya admin
 export async function POST(request) {
+  const authError = await requireAuth(["admin"]);
+  if (authError) return authError;
+
   try {
     const body = await request.json();
     const { nama, email, password, no_hp, role = "pelanggan", status = "aktif" } = body;

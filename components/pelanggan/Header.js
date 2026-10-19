@@ -50,24 +50,6 @@ export default function PelangganHeader({ onMenuClick }) {
 
       {/* Right: Role Switcher & Customer Avatar */}
       <div className="flex items-center gap-3">
-        {/* Role Switcher Pill */}
-        <div className="hidden lg:flex items-center bg-slate-100 p-0.5 rounded-lg text-xs font-semibold">
-          <Link
-            href="/admin"
-            className="px-2.5 py-1 text-slate-600 hover:text-slate-900 rounded-md transition-colors"
-          >
-            Admin
-          </Link>
-          <span className="px-2.5 py-1 bg-white text-blue-600 rounded-md shadow-xs">
-            Pelanggan
-          </span>
-          <Link
-            href="/teknisi"
-            className="px-2.5 py-1 text-slate-600 hover:text-slate-900 rounded-md transition-colors"
-          >
-            Teknisi
-          </Link>
-        </div>
 
         {/* Location Badge (extends Lokasi) */}
         <div className="hidden sm:flex items-center gap-1 px-2.5 py-1 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-600">

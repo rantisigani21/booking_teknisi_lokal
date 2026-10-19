@@ -33,14 +33,14 @@ export default function Sidebar({ isOpen, onClose }) {
   const pathname = usePathname();
   const router = useRouter();
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
     if (confirm("Apakah Anda yakin ingin keluar dari sistem admin?")) {
       try {
+        await fetch("/api/auth/logout", { method: "POST" });
         localStorage.removeItem("admin_auth");
       } catch (e) {
         console.error(e);
       }
-      alert("Anda telah berhasil keluar dari sistem.");
       router.push("/admin/login");
     }
   };

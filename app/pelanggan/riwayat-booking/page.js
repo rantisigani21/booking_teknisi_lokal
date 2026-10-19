@@ -10,70 +10,105 @@ import {
   Search,
   X,
   MessageCircle,
-  Clock,
+  Loader2,
+  AlertCircle,
+  RefreshCw,
 } from "lucide-react";
 
-import { initialBookings } from "@/lib/dummyData";
+const STATUS_MAP = {
+  menunggu: { label: "Menunggu Konfirmasi", cls: "bg-amber-50 text-amber-700 border-amber-200" },
+  diterima: { label: "Diterima", cls: "bg-blue-50 text-blue-700 border-blue-200" },
+  diproses: { label: "Diproses", cls: "bg-indigo-50 text-indigo-700 border-indigo-200" },
+  selesai: { label: "Selesai", cls: "bg-emerald-50 text-emerald-700 border-emerald-200" },
+  dibatalkan: { label: "Dibatalkan", cls: "bg-rose-50 text-rose-700 border-rose-200" },
+};
+
+function getStatusInfo(status) {
+  const key = (status || "").toLowerCase();
+  return STATUS_MAP[key] || { label: status, cls: "bg-slate-100 text-slate-700 border-slate-200" };
+}
+
+function formatTanggal(val) {
+  if (!val) return "—";
+  try {
+    return new Date(val).toLocaleDateString("id-ID", {
+      day: "2-digit",
+      month: "short",
+      year: "numeric",
+    });
+  } catch {
+    return val;
+  }
+}
 
 export default function PelangganRiwayatPage() {
   const [bookings, setBookings] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState("");
   const [activeTab, setActiveTab] = useState("Semua");
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedBooking, setSelectedBooking] = useState(null);
+  const [pelangganId, setPelangganId] = useState(null);
+
+  const fetchBookings = async (pId) => {
+    setIsLoading(true);
+    setError("");
+    try {
+      const url = pId
+        ? `/api/booking?pelanggan_id=${pId}`
+        : "/api/booking";
+      const res = await fetch(url);
+      const json = await res.json();
+      if (json.success) {
+        setBookings(json.data || []);
+      } else {
+        setError("Gagal memuat riwayat booking.");
+      }
+    } catch {
+      setError("Gagal menghubungkan ke server.");
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   useEffect(() => {
-    let localBookings = [];
+    let pId = null;
     try {
-      localBookings = JSON.parse(localStorage.getItem("customer_bookings") || "[]");
-    } catch (e) {
-      console.error(e);
-    }
-
-    const customerInitial = initialBookings.filter(
-      (b) => b.pelanggan.toLowerCase().includes("siti") || b.pelanggan.toLowerCase().includes("rahma")
-    );
-
-    const displayInitials =
-      customerInitial.length > 0 ? customerInitial : initialBookings.slice(0, 5);
-
-    setBookings([...localBookings, ...displayInitials]);
+      const raw = localStorage.getItem("customer_auth");
+      if (raw) {
+        const u = JSON.parse(raw);
+        if (u.id) {
+          pId = u.id;
+          setPelangganId(u.id);
+        }
+      }
+    } catch {}
+    fetchBookings(pId);
   }, []);
 
   const filtered = bookings.filter((item) => {
+    const status = (item.status || "").toLowerCase();
     const matchesTab =
       activeTab === "Semua"
         ? true
         : activeTab === "Aktif"
-        ? item.status === "Menunggu Konfirmasi" || item.status === "Diproses"
-        : item.status === activeTab;
+        ? status === "menunggu" || status === "diterima" || status === "diproses"
+        : activeTab === "Selesai"
+        ? status === "selesai"
+        : status === "dibatalkan";
 
     const q = searchTerm.toLowerCase();
     const matchesQuery =
-      item.id.toLowerCase().includes(q) ||
-      item.layanan.toLowerCase().includes(q) ||
-      item.teknisi.toLowerCase().includes(q);
+      (item.kode_booking || "").toLowerCase().includes(q) ||
+      (item.nama_layanan || "").toLowerCase().includes(q) ||
+      (item.teknisi_nama || "").toLowerCase().includes(q);
 
     return matchesTab && matchesQuery;
   });
 
-  const getStatusBadge = (status) => {
-    switch (status) {
-      case "Menunggu Konfirmasi":
-        return "bg-amber-50 text-amber-700 border-amber-200";
-      case "Diproses":
-        return "bg-blue-50 text-blue-700 border-blue-200";
-      case "Selesai":
-        return "bg-emerald-50 text-emerald-700 border-emerald-200";
-      case "Dibatalkan":
-        return "bg-rose-50 text-rose-700 border-rose-200";
-      default:
-        return "bg-slate-100 text-slate-700 border-slate-200";
-    }
-  };
-
   return (
     <div className="space-y-6">
-      {/* Header Senada dengan Admin */}
+      {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h2 className="text-xl font-bold text-slate-900">Riwayat Booking & Servis</h2>
@@ -82,13 +117,23 @@ export default function PelangganRiwayatPage() {
           </p>
         </div>
 
-        <Link
-          href="/pelanggan/booking"
-          className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-semibold shadow-xs flex items-center gap-1.5 transition-colors self-start sm:self-auto"
-        >
-          <CalendarCheck className="w-3.5 h-3.5" />
-          <span>Booking Teknisi Baru</span>
-        </Link>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => fetchBookings(pelangganId)}
+            className="p-2 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors border border-slate-200"
+            title="Refresh"
+          >
+            <RefreshCw className="w-3.5 h-3.5" />
+          </button>
+          <Link
+            href="/pelanggan/booking"
+            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-semibold shadow-xs flex items-center gap-1.5 transition-colors"
+          >
+            <CalendarCheck className="w-3.5 h-3.5" />
+            <span>Booking Teknisi Baru</span>
+          </Link>
+        </div>
       </div>
 
       {/* Filter Tabs & Search */}
@@ -122,89 +167,121 @@ export default function PelangganRiwayatPage() {
         </div>
       </div>
 
-      {/* List Kartu Riwayat */}
-      {filtered.length === 0 ? (
-        <div className="bg-white border border-slate-200 rounded-xl p-10 text-center">
-          <CalendarCheck className="w-10 h-10 text-slate-300 mx-auto mb-3" />
-          <h3 className="text-sm font-bold text-slate-800">Tidak Ada Riwayat Booking</h3>
-          <p className="text-xs text-slate-500 mt-1">
-            Belum ada pesanan dengan filter status ini.
-          </p>
+      {/* Error */}
+      {error && (
+        <div className="p-4 bg-rose-50 border border-rose-200 rounded-xl text-rose-700 text-xs flex items-center gap-2">
+          <AlertCircle className="w-4 h-4 shrink-0" />
+          {error}
+          <button
+            type="button"
+            onClick={() => fetchBookings(pelangganId)}
+            className="ml-auto underline"
+          >
+            Coba lagi
+          </button>
         </div>
-      ) : (
+      )}
+
+      {/* Loading */}
+      {isLoading ? (
         <div className="space-y-3">
-          {filtered.map((item) => (
-            <div
-              key={item.id}
-              className="bg-white border border-slate-200 rounded-xl p-4 sm:p-5 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:border-slate-300 transition-colors"
-            >
-              <div className="space-y-1.5 text-xs">
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="font-mono font-bold text-slate-900 bg-slate-100 px-2 py-0.5 rounded">
-                    {item.id}
-                  </span>
-                  <span
-                    className={`px-2 py-0.5 rounded text-[10px] font-bold border ${getStatusBadge(
-                      item.status
-                    )}`}
-                  >
-                    {item.status}
-                  </span>
-                  <span className="text-slate-400">
-                    • {item.tanggal} ({item.jam})
-                  </span>
+          {[1, 2, 3].map((i) => (
+            <div key={i} className="bg-white border border-slate-200 rounded-xl p-5 animate-pulse">
+              <div className="flex justify-between">
+                <div className="space-y-2 flex-1">
+                  <div className="flex gap-2">
+                    <div className="h-4 bg-slate-200 rounded w-28" />
+                    <div className="h-4 bg-slate-200 rounded w-20" />
+                  </div>
+                  <div className="h-4 bg-slate-200 rounded w-1/2" />
+                  <div className="h-3 bg-slate-200 rounded w-2/3" />
                 </div>
-
-                <h4 className="text-sm font-bold text-slate-900">{item.layanan}</h4>
-
-                <div className="flex flex-wrap items-center gap-3 text-slate-500 text-[11px]">
-                  <span className="flex items-center gap-1">
-                    <Wrench className="w-3.5 h-3.5 text-blue-600" />
-                    Teknisi: <strong className="text-slate-700">{item.teknisi}</strong>
-                  </span>
-                  <span>•</span>
-                  <span className="flex items-center gap-1">
-                    <MapPin className="w-3.5 h-3.5 text-rose-500" />
-                    {item.alamat}
-                  </span>
-                </div>
-              </div>
-
-              <div className="flex sm:flex-col items-center sm:items-end justify-between sm:justify-center gap-2 pt-3 sm:pt-0 border-t sm:border-t-0 border-slate-100">
-                <div className="text-left sm:text-right">
-                  <span className="text-[10px] text-slate-400 block">Total Biaya</span>
-                  <span className="text-sm font-bold text-blue-600">
-                    {typeof item.totalBiaya === "number"
-                      ? `Rp ${item.totalBiaya.toLocaleString("id-ID")}`
-                      : item.biaya || "Rp 95.000"}
-                  </span>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={() => setSelectedBooking(item)}
-                  className="px-3.5 py-1.5 bg-slate-100 hover:bg-blue-50 text-slate-800 hover:text-blue-700 border border-slate-200 rounded-lg text-xs font-semibold transition-colors flex items-center gap-1.5 cursor-pointer"
-                >
-                  <Eye className="w-3.5 h-3.5" />
-                  <span>Lihat Detail</span>
-                </button>
+                <div className="h-8 bg-slate-200 rounded w-24 ml-4" />
               </div>
             </div>
           ))}
         </div>
+      ) : filtered.length === 0 ? (
+        <div className="bg-white border border-slate-200 rounded-xl p-10 text-center">
+          <CalendarCheck className="w-10 h-10 text-slate-300 mx-auto mb-3" />
+          <h3 className="text-sm font-bold text-slate-800">Tidak Ada Riwayat Booking</h3>
+          <p className="text-xs text-slate-500 mt-1">
+            {searchTerm
+              ? "Tidak ditemukan booking yang sesuai pencarian."
+              : "Belum ada pesanan dengan filter status ini."}
+          </p>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {filtered.map((item) => {
+            const si = getStatusInfo(item.status);
+            return (
+              <div
+                key={item.id}
+                className="bg-white border border-slate-200 rounded-xl p-4 sm:p-5 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:border-slate-300 transition-colors"
+              >
+                <div className="space-y-1.5 text-xs flex-1 min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="font-mono font-bold text-slate-900 bg-slate-100 px-2 py-0.5 rounded">
+                      {item.kode_booking}
+                    </span>
+                    <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${si.cls}`}>
+                      {si.label}
+                    </span>
+                    <span className="text-slate-400">
+                      • {formatTanggal(item.tanggal_booking)} ({item.waktu_booking || "—"})
+                    </span>
+                  </div>
+
+                  <h4 className="text-sm font-bold text-slate-900">{item.nama_layanan}</h4>
+
+                  <div className="flex flex-wrap items-center gap-3 text-slate-500 text-[11px]">
+                    <span className="flex items-center gap-1">
+                      <Wrench className="w-3.5 h-3.5 text-blue-600" />
+                      Teknisi: <strong className="text-slate-700">{item.teknisi_nama || "Belum ditugaskan"}</strong>
+                    </span>
+                    <span>•</span>
+                    <span className="flex items-center gap-1 truncate">
+                      <MapPin className="w-3.5 h-3.5 text-rose-500 shrink-0" />
+                      <span className="truncate">{item.alamat}</span>
+                    </span>
+                  </div>
+                </div>
+
+                <div className="flex sm:flex-col items-center sm:items-end justify-between sm:justify-center gap-2 pt-3 sm:pt-0 border-t sm:border-t-0 border-slate-100 shrink-0">
+                  <div className="text-left sm:text-right">
+                    <span className="text-[10px] text-slate-400 block">Total Biaya</span>
+                    <span className="text-sm font-bold text-blue-600">
+                      Rp {Number(item.total_harga || 0).toLocaleString("id-ID")}
+                    </span>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => setSelectedBooking(item)}
+                    className="px-3.5 py-1.5 bg-slate-100 hover:bg-blue-50 text-slate-800 hover:text-blue-700 border border-slate-200 rounded-lg text-xs font-semibold transition-colors flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <Eye className="w-3.5 h-3.5" />
+                    <span>Lihat Detail</span>
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
       )}
 
-      {/* Modal Detail Riwayat (extends Lihat Detail Riwayat) */}
+      {/* Modal Detail */}
       {selectedBooking && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-[2px]">
-          <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-xl border border-slate-200 space-y-4 animate-in fade-in max-h-[90vh] overflow-y-auto text-xs">
+          <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-xl border border-slate-200 space-y-4 max-h-[90vh] overflow-y-auto text-xs">
             <div className="flex items-center justify-between pb-3 border-b border-slate-100">
               <div>
                 <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
                   Rincian Riwayat
                 </span>
                 <h3 className="text-base font-bold text-slate-900 font-mono">
-                  {selectedBooking.id}
+                  {selectedBooking.kode_booking}
                 </h3>
               </div>
               <button
@@ -217,46 +294,53 @@ export default function PelangganRiwayatPage() {
             </div>
 
             <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 space-y-2">
-              <div className="flex justify-between items-center">
-                <span className="text-slate-500">Status Pesanan:</span>
-                <span
-                  className={`px-2 py-0.5 rounded text-[10px] font-bold border ${getStatusBadge(
-                    selectedBooking.status
-                  )}`}
-                >
-                  {selectedBooking.status}
-                </span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-500">Layanan:</span>
-                <strong className="text-slate-800">{selectedBooking.layanan}</strong>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-500">Teknisi Ditugaskan:</span>
-                <strong className="text-slate-800">{selectedBooking.teknisi}</strong>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-500">Waktu Kunjungan:</span>
-                <span className="text-slate-800 font-medium">
-                  {selectedBooking.tanggal} ({selectedBooking.jam})
-                </span>
-              </div>
+              {[
+                ["Status Pesanan", (() => {
+                  const si = getStatusInfo(selectedBooking.status);
+                  return <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${si.cls}`}>{si.label}</span>;
+                })()],
+                ["Layanan", <strong key="l" className="text-slate-800">{selectedBooking.nama_layanan}</strong>],
+                ["Kategori", selectedBooking.nama_kategori || "—"],
+                ["Teknisi Ditugaskan", <strong key="t" className="text-slate-800">{selectedBooking.teknisi_nama || "Belum ditugaskan"}</strong>],
+                ["No. HP Teknisi", selectedBooking.teknisi_no_hp || "—"],
+                ["Waktu Kunjungan", `${formatTanggal(selectedBooking.tanggal_booking)} (${selectedBooking.waktu_booking || "—"})`],
+                ["Total Biaya", <strong key="b" className="text-blue-600 text-sm">Rp {Number(selectedBooking.total_harga || 0).toLocaleString("id-ID")}</strong>],
+              ].map(([label, val]) => (
+                <div key={label} className="flex justify-between items-center">
+                  <span className="text-slate-500">{label}:</span>
+                  <span>{val}</span>
+                </div>
+              ))}
+
               <div className="pt-1 border-t border-slate-200/60">
                 <span className="text-slate-500 block mb-0.5">Alamat Kunjungan:</span>
                 <p className="text-slate-800 font-medium">{selectedBooking.alamat}</p>
               </div>
             </div>
 
-            <div className="p-3 bg-white border border-slate-200 rounded-xl">
-              <span className="text-[10px] text-slate-400 block mb-1">Catatan Kerusakan:</span>
-              <p className="text-slate-700 italic">
-                &ldquo;{selectedBooking.keluhan || "Pemeriksaan dan perbaikan langsung di lokasi."}&rdquo;
-              </p>
-            </div>
+            {selectedBooking.keluhan && (
+              <div className="p-3 bg-white border border-slate-200 rounded-xl">
+                <span className="text-[10px] text-slate-400 block mb-1">Catatan Kerusakan:</span>
+                <p className="text-slate-700 italic">&ldquo;{selectedBooking.keluhan}&rdquo;</p>
+              </div>
+            )}
 
-            <div className="pt-2 border-t border-slate-100 flex items-center justify-between">
+            {/* Riwayat Status */}
+            {selectedBooking.riwayat_status?.length > 0 && (
+              <div className="space-y-2">
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Riwayat Status</p>
+                {selectedBooking.riwayat_status.map((r) => (
+                  <div key={r.id} className="flex gap-2 text-[11px]">
+                    <span className="text-slate-400 shrink-0">{formatTanggal(r.created_at)}</span>
+                    <span className="text-slate-700">{r.catatan}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <div className="pt-2 border-t border-slate-100 flex items-center gap-2">
               <a
-                href={`https://wa.me/6281234567890?text=Halo%20Teknisi,%20saya%20ingin%20tanya%20booking%20kode%20${selectedBooking.id}`}
+                href={`https://wa.me/6281234567890?text=Halo%20Teknisi,%20saya%20ingin%20tanya%20booking%20kode%20${selectedBooking.kode_booking}`}
                 target="_blank"
                 rel="noreferrer"
                 className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors"
@@ -268,7 +352,7 @@ export default function PelangganRiwayatPage() {
               <button
                 type="button"
                 onClick={() => setSelectedBooking(null)}
-                className="px-4 py-2 bg-slate-900 text-white rounded-lg text-xs font-semibold"
+                className="px-4 py-2 bg-slate-900 text-white rounded-lg text-xs font-semibold ml-auto"
               >
                 Tutup
               </button>

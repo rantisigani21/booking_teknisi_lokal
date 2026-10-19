@@ -7,18 +7,15 @@ import {
   Calendar,
   Clock,
   MapPin,
-  User,
-  Phone,
   CheckCircle2,
   AlertCircle,
   ArrowRight,
   ShieldCheck,
   CreditCard,
   MessageCircle,
+  Loader2,
   X,
 } from "lucide-react";
-
-import { initialServices, initialTechnicians, initialCategories } from "@/lib/dummyData";
 
 function CustomerBookingForm() {
   const router = useRouter();
@@ -26,52 +23,95 @@ function CustomerBookingForm() {
 
   const preServiceId = searchParams.get("serviceId") || "";
   const preTechId = searchParams.get("techId") || "";
-  const preCategory = searchParams.get("category") || "";
+
+  // Data dari API
+  const [categories, setCategories] = useState([]);
+  const [services, setServices] = useState([]);
+  const [technicians, setTechnicians] = useState([]);
+  const [isLoadingData, setIsLoadingData] = useState(true);
 
   // Form states
-  const [selectedCategory, setSelectedCategory] = useState(preCategory || "Semua");
-  const [selectedServiceId, setSelectedServiceId] = useState(preServiceId || initialServices[0].id);
+  const [selectedCategory, setSelectedCategory] = useState("Semua");
+  const [selectedServiceId, setSelectedServiceId] = useState(preServiceId);
   const [selectedTechId, setSelectedTechId] = useState(preTechId || "auto");
-  const [visitDate, setVisitDate] = useState("2025-03-15");
+  const [visitDate, setVisitDate] = useState(() => {
+    const d = new Date();
+    d.setDate(d.getDate() + 1);
+    return d.toISOString().split("T")[0];
+  });
   const [visitTime, setVisitTime] = useState("10:00 WIB");
 
-  // Customer info
-  const [customerName, setCustomerName] = useState("Siti Rahmawati");
-  const [customerPhone, setCustomerPhone] = useState("0812-3456-7890");
-  const [customerAddress, setCustomerAddress] = useState("Jl. Melati No. 14, Lowokwaru, Malang");
+  // Customer info dari session
+  const [pelangganId, setPelangganId] = useState(null);
+  const [customerName, setCustomerName] = useState("");
+  const [customerPhone, setCustomerPhone] = useState("");
+  const [customerAddress, setCustomerAddress] = useState("");
   const [complaint, setComplaint] = useState("");
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [createdBooking, setCreatedBooking] = useState(null);
   const [errorMessage, setErrorMessage] = useState("");
 
+  // Load data dari API dan session
   useEffect(() => {
+    // Ambil info user dari localStorage
     try {
-      const savedUser = localStorage.getItem("customer_auth");
-      if (savedUser) {
-        const u = JSON.parse(savedUser);
+      const raw = localStorage.getItem("customer_auth");
+      if (raw) {
+        const u = JSON.parse(raw);
+        if (u.id) setPelangganId(u.id);
         if (u.nama) setCustomerName(u.nama);
-        if (u.noHp) setCustomerPhone(u.noHp);
-        if (u.alamat) setCustomerAddress(u.alamat);
+        if (u.no_hp) setCustomerPhone(u.no_hp);
       }
-    } catch (e) {
-      console.error(e);
-    }
+    } catch {}
+
+    const fetchData = async () => {
+      setIsLoadingData(true);
+      try {
+        const [catRes, svcRes, techRes] = await Promise.all([
+          fetch("/api/kategori-jasa?status=aktif"),
+          fetch("/api/layanan?status=aktif"),
+          fetch("/api/teknisi?status_ketersediaan=tersedia"),
+        ]);
+        const [catJson, svcJson, techJson] = await Promise.all([
+          catRes.json(),
+          svcRes.json(),
+          techRes.json(),
+        ]);
+
+        const cats = catJson.data || [];
+        const svcs = svcJson.data || [];
+        const techs = techJson.data || [];
+
+        setCategories(cats);
+        setServices(svcs);
+        setTechnicians(techs);
+
+        // Set service awal dari URL param atau service pertama
+        if (!selectedServiceId && svcs.length > 0) {
+          setSelectedServiceId(String(svcs[0].id));
+        }
+      } catch {
+        setErrorMessage("Gagal memuat data layanan. Periksa koneksi Anda.");
+      } finally {
+        setIsLoadingData(false);
+      }
+    };
+
+    fetchData();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const availableServices = initialServices.filter((s) => {
+  const availableServices = services.filter((s) => {
     if (selectedCategory === "Semua") return true;
-    return s.kategori === selectedCategory;
+    return s.nama_kategori === selectedCategory;
   });
 
-  const selectedService =
-    initialServices.find((s) => s.id === selectedServiceId) || initialServices[0];
-
-  const selectedTech =
-    initialTechnicians.find((t) => t.id === selectedTechId) || null;
+  const selectedService = services.find((s) => String(s.id) === String(selectedServiceId));
+  const selectedTech = technicians.find((t) => String(t.id) === String(selectedTechId)) || null;
 
   const ongkirKunjungan = 15000;
-  const totalBiaya = (selectedService?.harga || 0) + ongkirKunjungan;
+  const totalBiaya = (Number(selectedService?.harga) || 0) + ongkirKunjungan;
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -81,85 +121,70 @@ function CustomerBookingForm() {
       setErrorMessage("Mohon lengkapi nama, nomor telepon, dan alamat kunjungan.");
       return;
     }
-
     if (!complaint.trim()) {
       setErrorMessage("Silakan tuliskan ringkasan keluhan atau kerusakan perangkat Anda.");
+      return;
+    }
+    if (!selectedServiceId) {
+      setErrorMessage("Pilih layanan terlebih dahulu.");
       return;
     }
 
     setIsSubmitting(true);
 
     try {
-      // Panggil API Booking ke database MySQL
       const res = await fetch("/api/booking", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          pelanggan_id: pelangganId || undefined,
           pelanggan_nama: customerName,
           pelanggan_no_hp: customerPhone,
-          alamat: customerAddress,
-          layanan_id: 1,
+          teknisi_id: selectedTechId !== "auto" ? Number(selectedTechId) : null,
+          layanan_id: Number(selectedServiceId),
           tanggal_booking: visitDate,
-          waktu_booking: visitTime.replace(/\s*WIB/i, "").trim() || "10:00:00",
+          waktu_booking: visitTime.replace(/\s*WIB/i, "").trim(),
+          alamat: customerAddress,
           keluhan: complaint,
           total_harga: totalBiaya,
         }),
       });
 
       const json = await res.json();
-      const dbBooking = json.data;
 
-      const newBooking = {
-        id: dbBooking?.kode_booking || `BK-2025-${Math.floor(100 + Math.random() * 900)}`,
-        pelanggan: customerName,
-        pelangganHp: customerPhone,
-        alamat: customerAddress,
-        layanan: selectedService.nama,
-        kategori: selectedService.kategori,
-        biayaLayanan: selectedService.harga,
-        ongkirKunjungan,
-        totalBiaya,
-        teknisi: selectedTech ? selectedTech.nama : "Agus Prasetyo (Auto Terdekat)",
-        teknisiHp: selectedTech ? selectedTech.noHp : "0812-4455-6677",
-        tanggal: visitDate,
-        jam: visitTime,
-        status: "Menunggu Konfirmasi",
-        keluhan: complaint,
-      };
-
-      try {
-        const existing = JSON.parse(localStorage.getItem("customer_bookings") || "[]");
-        existing.unshift(newBooking);
-        localStorage.setItem("customer_bookings", JSON.stringify(existing));
-      } catch (err) {
-        console.error(err);
+      if (res.ok && json.success) {
+        const dbBooking = json.data;
+        setCreatedBooking({
+          id: dbBooking.kode_booking,
+          layanan: dbBooking.nama_layanan || selectedService?.nama_layanan,
+          kategori: dbBooking.nama_kategori || selectedService?.nama_kategori,
+          teknisi: dbBooking.teknisi_nama || (selectedTech ? selectedTech.nama : "Otomatis Teknisi Terdekat"),
+          tanggal: visitDate,
+          jam: visitTime,
+          totalBiaya,
+          status: "Menunggu Konfirmasi",
+          keluhan: complaint,
+        });
+      } else {
+        setErrorMessage(json.message || "Gagal membuat booking. Coba lagi.");
+        setIsSubmitting(false);
       }
-
-      setCreatedBooking(newBooking);
     } catch {
-      // Offline fallback
-      const fallbackBooking = {
-        id: `BK-2025-${Math.floor(100 + Math.random() * 900)}`,
-        pelanggan: customerName,
-        pelangganHp: customerPhone,
-        alamat: customerAddress,
-        layanan: selectedService.nama,
-        kategori: selectedService.kategori,
-        biayaLayanan: selectedService.harga,
-        ongkirKunjungan,
-        totalBiaya,
-        teknisi: selectedTech ? selectedTech.nama : "Agus Prasetyo (Auto Terdekat)",
-        teknisiHp: selectedTech ? selectedTech.noHp : "0812-4455-6677",
-        tanggal: visitDate,
-        jam: visitTime,
-        status: "Menunggu Konfirmasi",
-        keluhan: complaint,
-      };
-      setCreatedBooking(fallbackBooking);
-    } finally {
+      setErrorMessage("Gagal menghubungkan ke server. Periksa koneksi Anda.");
       setIsSubmitting(false);
     }
   };
+
+  if (isLoadingData) {
+    return (
+      <div className="flex items-center justify-center py-20">
+        <div className="flex flex-col items-center gap-3 text-slate-400">
+          <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+          <span className="text-sm">Memuat data layanan...</span>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -179,9 +204,9 @@ function CustomerBookingForm() {
       )}
 
       <form onSubmit={handleSubmit} className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        {/* Kolom Kiri: Form Input */}
+        {/* Kolom Kiri */}
         <div className="lg:col-span-8 space-y-5">
-          
+
           {/* Card 1: Layanan */}
           <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-xs space-y-4">
             <h3 className="text-sm font-bold text-slate-900 pb-3 border-b border-slate-100">
@@ -190,25 +215,21 @@ function CustomerBookingForm() {
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
-                <label className="block text-xs font-medium text-slate-700 mb-1">
-                  Kategori
-                </label>
+                <label className="block text-xs font-medium text-slate-700 mb-1">Kategori</label>
                 <select
                   value={selectedCategory}
                   onChange={(e) => {
                     setSelectedCategory(e.target.value);
-                    const match = initialServices.find(
-                      (s) => e.target.value === "Semua" || s.kategori === e.target.value
+                    const match = services.find(
+                      (s) => e.target.value === "Semua" || s.nama_kategori === e.target.value
                     );
-                    if (match) setSelectedServiceId(match.id);
+                    if (match) setSelectedServiceId(String(match.id));
                   }}
                   className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg bg-white focus:outline-hidden focus:border-blue-600 text-slate-800"
                 >
                   <option value="Semua">Semua Kategori</option>
-                  {initialCategories.map((c) => (
-                    <option key={c.id} value={c.nama}>
-                      {c.nama}
-                    </option>
+                  {categories.map((c) => (
+                    <option key={c.id} value={c.nama_kategori}>{c.nama_kategori}</option>
                   ))}
                 </select>
               </div>
@@ -223,8 +244,8 @@ function CustomerBookingForm() {
                   className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg bg-white focus:outline-hidden focus:border-blue-600 text-slate-800 font-semibold"
                 >
                   {availableServices.map((s) => (
-                    <option key={s.id} value={s.id}>
-                      {s.nama} — Rp {s.harga.toLocaleString("id-ID")}
+                    <option key={s.id} value={String(s.id)}>
+                      {s.nama_layanan} — Rp {Number(s.harga).toLocaleString("id-ID")}
                     </option>
                   ))}
                 </select>
@@ -233,7 +254,7 @@ function CustomerBookingForm() {
 
             {selectedService && (
               <p className="text-xs text-slate-500 bg-slate-50 p-2.5 rounded-lg border border-slate-100">
-                {selectedService.deskripsi}
+                {selectedService.deskripsi || "Layanan servis profesional oleh teknisi berpengalaman."}
               </p>
             )}
           </div>
@@ -245,22 +266,18 @@ function CustomerBookingForm() {
             </h3>
 
             <div>
-              <label className="block text-xs font-medium text-slate-700 mb-1">
-                Pilihan Teknisi
-              </label>
+              <label className="block text-xs font-medium text-slate-700 mb-1">Pilihan Teknisi</label>
               <select
                 value={selectedTechId}
                 onChange={(e) => setSelectedTechId(e.target.value)}
                 className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg bg-white focus:outline-hidden focus:border-blue-600 text-slate-800"
               >
-                <option value="auto">
-                  ⚡ Otomatis Pilihkan Teknisi Terdekat yang Sedang Siaga
-                </option>
-                {initialTechnicians
-                  .filter((t) => t.status === "Aktif")
+                <option value="auto">⚡ Otomatis Pilihkan Teknisi Terdekat yang Sedang Siaga</option>
+                {technicians
+                  .filter((t) => t.status_ketersediaan === "tersedia")
                   .map((t) => (
-                    <option key={t.id} value={t.id}>
-                      {t.nama} — {t.keahlian} ({t.lokasi}) ⭐ {t.rating}
+                    <option key={t.id} value={String(t.id)}>
+                      {t.nama} — {t.layanan?.[0]?.nama_kategori || "Teknisi Umum"} ⭐ {t.rating || "4.8"}
                     </option>
                   ))}
               </select>
@@ -277,6 +294,7 @@ function CustomerBookingForm() {
                     type="date"
                     required
                     value={visitDate}
+                    min={new Date().toISOString().split("T")[0]}
                     onChange={(e) => setVisitDate(e.target.value)}
                     className="w-full pl-9 pr-3 py-2 text-xs border border-slate-300 rounded-lg focus:outline-hidden focus:border-blue-600 text-slate-800"
                   />
@@ -306,7 +324,7 @@ function CustomerBookingForm() {
             </div>
           </div>
 
-          {/* Card 3: Data Pemesan & Keluhan */}
+          {/* Card 3: Data Pemesan */}
           <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-xs space-y-4">
             <h3 className="text-sm font-bold text-slate-900 pb-3 border-b border-slate-100">
               3. Data Pemesan & Alamat Kunjungan
@@ -349,6 +367,7 @@ function CustomerBookingForm() {
                 rows={2}
                 value={customerAddress}
                 onChange={(e) => setCustomerAddress(e.target.value)}
+                placeholder="Jl. Contoh No. 1, Kec. Klojen, Kota Malang"
                 className="w-full p-2.5 text-xs border border-slate-300 rounded-lg focus:outline-hidden focus:border-blue-600 text-slate-800"
               />
             </div>
@@ -369,7 +388,7 @@ function CustomerBookingForm() {
           </div>
         </div>
 
-        {/* Kolom Kanan: Rincian Biaya & Tombol */}
+        {/* Kolom Kanan: Ringkasan */}
         <div className="lg:col-span-4">
           <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-xs sticky top-24 space-y-4">
             <h3 className="text-sm font-bold text-slate-900 pb-3 border-b border-slate-100">
@@ -379,30 +398,30 @@ function CustomerBookingForm() {
             <div className="space-y-3 text-xs">
               <div>
                 <span className="text-slate-400 block text-[11px]">Layanan:</span>
-                <p className="font-semibold text-slate-900">{selectedService?.nama}</p>
-                <span className="inline-block mt-1 px-2 py-0.5 bg-blue-50 text-blue-700 rounded text-[10px] font-medium">
-                  {selectedService?.kategori}
-                </span>
+                <p className="font-semibold text-slate-900">{selectedService?.nama_layanan || "—"}</p>
+                {selectedService && (
+                  <span className="inline-block mt-1 px-2 py-0.5 bg-blue-50 text-blue-700 rounded text-[10px] font-medium">
+                    {selectedService.nama_kategori}
+                  </span>
+                )}
               </div>
 
               <div className="pt-2 border-t border-slate-100">
                 <span className="text-slate-400 block text-[11px]">Jadwal:</span>
-                <p className="font-medium text-slate-800">
-                  {visitDate} ({visitTime})
-                </p>
+                <p className="font-medium text-slate-800">{visitDate} ({visitTime})</p>
               </div>
 
               <div className="pt-2 border-t border-slate-100">
                 <span className="text-slate-400 block text-[11px]">Teknisi:</span>
                 <p className="font-medium text-slate-800">
-                  {selectedTech ? selectedTech.nama : "Otomatis Teknisi Terdekat"}
+                  {selectedTechId === "auto" ? "Otomatis Teknisi Terdekat" : (selectedTech?.nama || "—")}
                 </p>
               </div>
 
               <div className="pt-3 border-t border-slate-100 space-y-1.5">
                 <div className="flex justify-between text-slate-600">
                   <span>Biaya Jasa</span>
-                  <span>Rp {selectedService?.harga.toLocaleString("id-ID")}</span>
+                  <span>Rp {Number(selectedService?.harga || 0).toLocaleString("id-ID")}</span>
                 </div>
                 <div className="flex justify-between text-slate-600">
                   <span>Ongkir Kunjungan</span>
@@ -427,11 +446,14 @@ function CustomerBookingForm() {
 
             <button
               type="submit"
-              disabled={isSubmitting}
+              disabled={isSubmitting || !selectedServiceId}
               className="w-full py-2.5 px-4 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold transition-colors flex items-center justify-center gap-2 cursor-pointer shadow-xs disabled:opacity-60"
             >
               {isSubmitting ? (
-                <span>Memproses...</span>
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <span>Memproses...</span>
+                </>
               ) : (
                 <>
                   <span>Konfirmasi & Buat Pesanan</span>
@@ -443,19 +465,17 @@ function CustomerBookingForm() {
         </div>
       </form>
 
-      {/* Modal Detail Booking (extends Lihat Detail Booking) */}
+      {/* Modal Sukses Booking */}
       {createdBooking && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-[2px]">
-          <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-xl border border-slate-200 space-y-4 animate-in fade-in">
+          <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-xl border border-slate-200 space-y-4">
             <div className="flex items-center justify-between pb-3 border-b border-slate-100">
               <div className="flex items-center gap-2">
                 <div className="w-8 h-8 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center font-bold">
                   ✓
                 </div>
                 <div>
-                  <h3 className="text-sm font-bold text-slate-900">
-                    Booking Berhasil Dikonfirmasi!
-                  </h3>
+                  <h3 className="text-sm font-bold text-slate-900">Booking Berhasil Dikonfirmasi!</h3>
                   <p className="text-[11px] text-slate-500">
                     Kode Booking: <strong className="text-blue-600">{createdBooking.id}</strong>
                   </p>
@@ -526,7 +546,11 @@ function CustomerBookingForm() {
 
 export default function PelangganBookingPage() {
   return (
-    <Suspense fallback={<div className="p-8 text-center text-xs text-slate-500">Memuat formulir booking...</div>}>
+    <Suspense fallback={
+      <div className="flex items-center justify-center py-20">
+        <Loader2 className="w-6 h-6 animate-spin text-blue-600" />
+      </div>
+    }>
       <CustomerBookingForm />
     </Suspense>
   );

@@ -1,6 +1,7 @@
 import bcrypt from "bcryptjs";
 import { query } from "@/lib/db";
 import { successResponse, errorResponse } from "@/lib/apiResponse";
+import { requireAuth, getSession } from "@/lib/auth";
 
 
 // GET /api/users/[id]
@@ -53,10 +54,20 @@ export async function GET(request, { params }) {
   }
 }
 
-// PUT /api/users/[id]
+// PUT /api/users/[id] — admin atau user itu sendiri
 export async function PUT(request, { params }) {
+  const authError = await requireAuth(["admin", "pelanggan", "teknisi"]);
+  if (authError) return authError;
+
+  const session = await getSession();
+  const { id } = await params;
+
+  // Pelanggan & teknisi hanya boleh edit profil sendiri
+  if (session.role !== "admin" && String(session.id) !== String(id)) {
+    return errorResponse("Anda hanya dapat mengubah profil milik Anda sendiri.", 403);
+  }
+
   try {
-    const { id } = await params;
     const body = await request.json();
     const { nama, email, password, no_hp, role, status, foto } = body;
 
@@ -112,8 +123,11 @@ export async function PUT(request, { params }) {
   }
 }
 
-// DELETE /api/users/[id]
+// DELETE /api/users/[id] — hanya admin
 export async function DELETE(request, { params }) {
+  const authError = await requireAuth(["admin"]);
+  if (authError) return authError;
+
   try {
     const { id } = await params;
 

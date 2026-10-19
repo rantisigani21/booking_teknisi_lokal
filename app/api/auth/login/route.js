@@ -1,6 +1,7 @@
 import bcrypt from "bcryptjs";
 import { query } from "@/lib/db";
 import { successResponse, errorResponse } from "@/lib/apiResponse";
+import { setSessionCookie } from "@/lib/auth";
 
 
 export async function POST(request) {
@@ -85,6 +86,13 @@ export async function POST(request) {
       status: user.status,
       teknisi: teknisiInfo,
     };
+
+    // Set HTTP-only cookie untuk autentikasi server-side
+    await setSessionCookie({
+      id: safeUserData.id,
+      role: safeUserData.role,
+      nama: safeUserData.nama,
+    });
 
     return successResponse(safeUserData, "Login berhasil");
   } catch (error) {

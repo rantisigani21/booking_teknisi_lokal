@@ -1,8 +1,13 @@
 import { query } from "@/lib/db";
 import { successResponse, errorResponse } from "@/lib/apiResponse";
+import { requireAuth } from "@/lib/auth";
 
 
+// GET /api/stats — hanya admin
 export async function GET() {
+  const authError = await requireAuth(["admin"]);
+  if (authError) return authError;
+
   try {
     // 1. Hitung total pengguna (pelanggan)
     const [userStats] = await query(`

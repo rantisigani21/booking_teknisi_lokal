@@ -25,14 +25,14 @@ export default function PelangganSidebar({ isOpen, onClose }) {
   const pathname = usePathname();
   const router = useRouter();
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
     if (confirm("Apakah Anda yakin ingin keluar dari akun pelanggan?")) {
       try {
+        await fetch("/api/auth/logout", { method: "POST" });
         localStorage.removeItem("customer_auth");
       } catch (e) {
         console.error(e);
       }
-      alert("Anda telah berhasil keluar.");
       router.push("/pelanggan/login");
     }
   };
