@@ -1,53 +1,110 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
-import { Users, Wrench, CalendarCheck, Clock, ArrowRight, Eye, Calendar, MapPin, Phone, User, Tag } from "lucide-react";
+import { Users, Wrench, CalendarCheck, Clock, ArrowRight, Eye, Calendar, MapPin, Phone, User, Tag, Sparkles } from "lucide-react";
 import StatCard from "@/components/admin/StatCard";
 import StatusBadge from "@/components/admin/StatusBadge";
 import Modal from "@/components/admin/Modal";
 import { initialStats, initialBookings } from "@/lib/dummyData";
 
 export default function DashboardPage() {
-  // Use first 5 dummy bookings for "Booking Terbaru"
-  const recentBookings = initialBookings.slice(0, 5);
+  const [stats, setStats] = useState(initialStats);
+  const [recentBookings, setRecentBookings] = useState(initialBookings.slice(0, 5));
   const [selectedBooking, setSelectedBooking] = useState(null);
+  const [isLiveDb, setIsLiveDb] = useState(false);
+
+  useEffect(() => {
+    async function fetchStats() {
+      try {
+        const res = await fetch("/api/stats");
+        const json = await res.json();
+        if (json.success && json.data) {
+          setStats({
+            totalPengguna: json.data.totalPengguna,
+            totalTeknisi: json.data.totalTeknisi,
+            totalBooking: json.data.totalBooking,
+            bookingMenunggu: json.data.bookingMenunggu,
+          });
+          if (json.data.bookingTerbaru && json.data.bookingTerbaru.length > 0) {
+            const formatted = json.data.bookingTerbaru.map((b) => ({
+              id: b.kode_booking || `BK-${b.id}`,
+              rawId: b.id,
+              pelanggan: b.pelanggan,
+              pelangganHp: b.pelanggan_hp || "-",
+              alamat: b.alamat,
+              teknisi: b.teknisi || "Belum Ditugaskan",
+              layanan: b.layanan,
+              kategori: b.kategori,
+              tanggal: b.tanggal ? String(b.tanggal).slice(0, 10) : "-",
+              jam: b.jam ? `${String(b.jam).slice(0, 5)} WIB` : "-",
+              status: b.status.charAt(0).toUpperCase() + b.status.slice(1),
+              biaya: `Rp ${Number(b.biaya || 0).toLocaleString("id-ID")}`,
+              keluhan: b.keluhan || "-",
+            }));
+            setRecentBookings(formatted);
+          }
+          setIsLiveDb(true);
+        }
+      } catch (err) {
+        console.warn("Using fallback dummy stats:", err);
+      }
+    }
+    fetchStats();
+  }, []);
 
   return (
     <div className="space-y-6">
       {/* Welcome Banner */}
-      <div className="bg-white rounded-lg border border-slate-200 p-6 shadow-xs">
-        <h2 className="text-xl font-bold text-slate-900">
-          Selamat Datang, Admin
-        </h2>
-        <p className="text-sm text-slate-500 mt-1">
-          Kelola pengguna, teknisi, layanan, dan pemesanan melalui dashboard Booking Teknisi Lokal.
-        </p>
+      <div className="bg-white rounded-lg border border-slate-200 p-6 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <div className="flex items-center gap-2">
+            <h2 className="text-xl font-bold text-slate-900">
+              Selamat Datang, Admin
+            </h2>
+            {isLiveDb && (
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                MySQL Live
+              </span>
+            )}
+          </div>
+          <p className="text-sm text-slate-500 mt-1">
+            Kelola pengguna, teknisi, layanan, dan pemesanan melalui dashboard Booking Teknisi Lokal.
+          </p>
+        </div>
+        <Link
+          href="/admin/api-docs"
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors border border-blue-200 shrink-0 w-fit"
+        >
+          <Sparkles className="w-3.5 h-3.5" />
+          <span>Buka API Docs & Tester</span>
+        </Link>
       </div>
 
       {/* 4 Stat Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard
           title="Total Pengguna"
-          value={initialStats.totalPengguna}
+          value={stats.totalPengguna}
           icon={Users}
           subtitle="Pelanggan terdaftar"
         />
         <StatCard
           title="Total Teknisi"
-          value={initialStats.totalTeknisi}
+          value={stats.totalTeknisi}
           icon={Wrench}
           subtitle="Mitra teknisi aktif"
         />
         <StatCard
           title="Total Booking"
-          value={initialStats.totalBooking}
+          value={stats.totalBooking}
           icon={CalendarCheck}
           subtitle="Semua pesanan"
         />
         <StatCard
           title="Booking Menunggu"
-          value={initialStats.bookingMenunggu}
+          value={stats.bookingMenunggu}
           icon={Clock}
           subtitle="Perlu konfirmasi"
         />

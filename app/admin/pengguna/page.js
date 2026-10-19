@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { Search, Eye, User, Mail, Phone, Calendar, MapPin, CheckCircle } from "lucide-react";
+import { useState, useEffect } from "react";
+import { Search, Eye, User, Mail, Phone, Calendar, MapPin, CheckCircle, RefreshCw } from "lucide-react";
 import Modal from "@/components/admin/Modal";
 import StatusBadge from "@/components/admin/StatusBadge";
 import { initialUsers } from "@/lib/dummyData";
@@ -10,13 +10,49 @@ export default function KelolaPenggunaPage() {
   const [users, setUsers] = useState(initialUsers);
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedUser, setSelectedUser] = useState(null);
+  const [isLoading, setIsLoading] = useState(false);
+
+  useEffect(() => {
+    async function loadUsers() {
+      setIsLoading(true);
+      try {
+        const res = await fetch("/api/users");
+        const json = await res.json();
+        if (json.success && Array.isArray(json.data) && json.data.length > 0) {
+          const formatted = json.data.map((u) => ({
+            id: `USR-${String(u.id).padStart(3, "0")}`,
+            rawId: u.id,
+            nama: u.nama,
+            email: u.email,
+            noHp: u.no_hp || "-",
+            tanggalDaftar: u.created_at
+              ? new Date(u.created_at).toLocaleDateString("id-ID", {
+                  day: "2-digit",
+                  month: "short",
+                  year: "numeric",
+                })
+              : "Baru saja",
+            alamat: "Kota Malang",
+            totalBooking: u.total_booking || 0,
+            status: u.status === "aktif" ? "Aktif" : "Tidak Aktif",
+          }));
+          setUsers(formatted);
+        }
+      } catch (err) {
+        console.warn("Fallback to initial dummy users:", err);
+      } finally {
+        setIsLoading(false);
+      }
+    }
+    loadUsers();
+  }, []);
 
   const filteredUsers = users.filter((u) => {
     const q = searchTerm.toLowerCase();
     return (
       u.nama.toLowerCase().includes(q) ||
       u.email.toLowerCase().includes(q) ||
-      u.noHp.includes(q)
+      (u.noHp && u.noHp.includes(q))
     );
   });
 

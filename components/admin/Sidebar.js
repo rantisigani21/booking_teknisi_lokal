@@ -14,6 +14,7 @@ import {
   LogOut,
   X,
   ShieldCheck,
+  Code2,
 } from "lucide-react";
 
 const navigationItems = [
@@ -24,6 +25,7 @@ const navigationItems = [
   { name: "Kelola Layanan", href: "/admin/layanan", icon: Briefcase },
   { name: "Kelola Booking", href: "/admin/booking", icon: CalendarCheck },
   { name: "Kelola Riwayat Booking", href: "/admin/riwayat-booking", icon: History },
+  { name: "API & Dokumentasi", href: "/admin/api-docs", icon: Code2 },
   { name: "Profil", href: "/admin/profil", icon: UserCircle },
 ];
 

@@ -1,15 +1,19 @@
 "use client";
 
-import { useState } from "react";
-import { Plus, Edit2, Trash2, Layers, AlertCircle } from "lucide-react";
+import { useState, useEffect } from "react";
+import { Plus, Edit2, Trash2, Layers, AlertCircle, RefreshCw } from "lucide-react";
 import Modal from "@/components/admin/Modal";
+import { useToast } from "@/components/admin/ToastContext";
 import { initialCategories } from "@/lib/dummyData";
 
 export default function KelolaKategoriJasaPage() {
+  const { showToast } = useToast();
   const [categories, setCategories] = useState(initialCategories);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingCategory, setEditingCategory] = useState(null);
   const [deleteConfirm, setDeleteConfirm] = useState(null);
+  const [errorMessage, setErrorMessage] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
 
   // Form State
   const [formData, setFormData] = useState({
@@ -17,9 +21,38 @@ export default function KelolaKategoriJasaPage() {
     deskripsi: "",
   });
 
+  const loadCategories = async () => {
+    setIsLoading(true);
+    try {
+      const res = await fetch("/api/kategori-jasa");
+      const json = await res.json();
+      if (json.success && Array.isArray(json.data) && json.data.length > 0) {
+        setCategories(
+          json.data.map((c) => ({
+            id: `KAT-${String(c.id).padStart(2, "0")}`,
+            rawId: c.id,
+            nama: c.nama_kategori,
+            deskripsi: c.deskripsi || "-",
+            jumlahLayanan: Number(c.jumlah_layanan || 0),
+            status: c.status,
+          }))
+        );
+      }
+    } catch (err) {
+      console.warn("Fallback to initial dummy categories:", err);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadCategories();
+  }, []);
+
   const openAddModal = () => {
     setEditingCategory(null);
     setFormData({ nama: "", deskripsi: "" });
+    setErrorMessage("");
     setIsModalOpen(true);
   };
 
@@ -29,40 +62,118 @@ export default function KelolaKategoriJasaPage() {
       nama: cat.nama,
       deskripsi: cat.deskripsi,
     });
+    setErrorMessage("");
     setIsModalOpen(true);
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     if (!formData.nama.trim()) return;
+    setErrorMessage("");
 
-    if (editingCategory) {
-      // Edit existing
-      setCategories((prev) =>
-        prev.map((c) =>
-          c.id === editingCategory.id
-            ? { ...c, nama: formData.nama, deskripsi: formData.deskripsi }
-            : c
-        )
-      );
-    } else {
-      // Add new
-      const newCat = {
-        id: `KAT-0${categories.length + 1}`,
-        nama: formData.nama,
-        deskripsi: formData.deskripsi,
-        jumlahLayanan: 0,
-      };
-      setCategories((prev) => [...prev, newCat]);
+    try {
+      if (editingCategory) {
+        // Edit existing
+        const targetId = editingCategory.rawId || editingCategory.id;
+        const res = await fetch(`/api/kategori-jasa/${targetId}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            nama_kategori: formData.nama.trim(),
+            deskripsi: formData.deskripsi,
+          }),
+        });
+
+        if (!res.ok) {
+          const json = await res.json();
+          showToast(json.message || "Gagal memperbarui kategori.", "error", "Gagal Update");
+          return;
+        }
+
+        setCategories((prev) =>
+          prev.map((c) =>
+            c.id === editingCategory.id
+              ? { ...c, nama: formData.nama, deskripsi: formData.deskripsi }
+              : c
+          )
+        );
+
+        showToast(
+          `Kategori "${formData.nama}" berhasil diperbarui.`,
+          "success",
+          "Kategori Diperbarui"
+        );
+      } else {
+        // Add new
+        const res = await fetch("/api/kategori-jasa", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            nama_kategori: formData.nama.trim(),
+            deskripsi: formData.deskripsi,
+            status: "aktif",
+          }),
+        });
+        const json = await res.json();
+
+        if (!res.ok) {
+          showToast(json.message || "Gagal menambahkan kategori.", "error", "Gagal Menambahkan");
+          return;
+        }
+
+        const createdId = json.data?.id || categories.length + 1;
+
+        const newCat = {
+          id: `KAT-${String(createdId).padStart(2, "0")}`,
+          rawId: createdId,
+          nama: formData.nama,
+          deskripsi: formData.deskripsi,
+          jumlahLayanan: 0,
+        };
+        setCategories((prev) => [...prev, newCat]);
+
+        showToast(
+          `Kategori baru "${formData.nama}" berhasil ditambahkan ke database!`,
+          "success",
+          "Kategori Ditambahkan"
+        );
+      }
+      setIsModalOpen(false);
+    } catch {
+      showToast("Terjadi kendala saat menyimpan kategori.", "error", "Gagal Menyimpan");
     }
-
-    setIsModalOpen(false);
   };
 
-  const handleDelete = () => {
+  const handleDelete = async () => {
     if (deleteConfirm) {
-      setCategories((prev) => prev.filter((c) => c.id !== deleteConfirm.id));
-      setDeleteConfirm(null);
+      const deletedName = deleteConfirm.nama;
+      try {
+        const targetId = deleteConfirm.rawId || deleteConfirm.id;
+        const res = await fetch(`/api/kategori-jasa/${targetId}`, { method: "DELETE" });
+        const json = await res.json();
+
+        if (!res.ok) {
+          showToast(json.message || "Kategori tidak dapat dihapus.", "error", "Gagal Menghapus");
+          return;
+        }
+
+        setCategories((prev) => prev.filter((c) => c.id !== deleteConfirm.id));
+        setDeleteConfirm(null);
+
+        showToast(
+          `Kategori "${deletedName}" berhasil dihapus dari sistem.`,
+          "success",
+          "Kategori Dihapus"
+        );
+      } catch {
+        setCategories((prev) => prev.filter((c) => c.id !== deleteConfirm.id));
+        setDeleteConfirm(null);
+        showToast(
+          `Kategori "${deletedName}" telah dihapus.`,
+          "info",
+          "Kategori Dihapus"
+        );
+      }
     }
   };
 

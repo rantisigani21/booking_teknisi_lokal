@@ -1,25 +1,75 @@
 "use client";
 
-import { useState } from "react";
-import { User, Mail, Phone, Camera, Check, ShieldCheck } from "lucide-react";
+import { useState, useEffect } from "react";
+import { User, Mail, Phone, Camera, Check, ShieldCheck, RefreshCw } from "lucide-react";
+import { useToast } from "@/components/admin/ToastContext";
 
 export default function ProfilAdminPage() {
+  const { showToast } = useToast();
   const [profile, setProfile] = useState({
-    nama: "Admin Utama",
-    email: "admin@bookingteknisi.id",
+    id: 1,
+    nama: "Admin Booking",
+    email: "admin@bookingteknisi.local",
     noHp: "0812-3456-7890",
     role: "Super Administrator",
     avatar: "AD",
   });
 
   const [savedSuccess, setSavedSuccess] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
 
-  const handleSubmit = (e) => {
+  useEffect(() => {
+    async function loadAdminProfile() {
+      try {
+        const res = await fetch("/api/users/1");
+        const json = await res.json();
+        if (json.success && json.data) {
+          setProfile({
+            id: json.data.id,
+            nama: json.data.nama,
+            email: json.data.email,
+            noHp: json.data.no_hp || "0812-3456-7890",
+            role: "Super Administrator",
+            avatar: json.data.nama.slice(0, 2).toUpperCase(),
+          });
+        }
+      } catch (err) {
+        console.warn("Fallback to default admin profile:", err);
+      }
+    }
+    loadAdminProfile();
+  }, []);
+
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    setSavedSuccess(true);
-    setTimeout(() => {
-      setSavedSuccess(false);
-    }, 3500);
+    setIsLoading(true);
+
+    try {
+      await fetch(`/api/users/${profile.id || 1}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          nama: profile.nama.trim(),
+          email: profile.email.trim(),
+          no_hp: profile.noHp.trim(),
+        }),
+      });
+
+      setSavedSuccess(true);
+      showToast(
+        "Data profil dan kontak administrator berhasil diperbarui ke database!",
+        "success",
+        "Profil Tersimpan"
+      );
+      setTimeout(() => {
+        setSavedSuccess(false);
+      }, 3500);
+    } catch (err) {
+      console.error(err);
+      showToast("Gagal memperbarui profil ke server.", "error", "Gagal");
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (

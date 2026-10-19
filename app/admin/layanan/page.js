@@ -1,18 +1,22 @@
 "use client";
 
-import { useState } from "react";
-import { Plus, Edit2, Trash2, Search, AlertCircle, Tag } from "lucide-react";
+import { useState, useEffect } from "react";
+import { Plus, Edit2, Trash2, Search, AlertCircle, Tag, RefreshCw } from "lucide-react";
 import Modal from "@/components/admin/Modal";
+import { useToast } from "@/components/admin/ToastContext";
 import { initialServices, initialCategories } from "@/lib/dummyData";
 
 export default function KelolaLayananPage() {
+  const { showToast } = useToast();
   const [services, setServices] = useState(initialServices);
+  const [categories, setCategories] = useState(initialCategories);
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("Semua");
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingService, setEditingService] = useState(null);
   const [deleteConfirm, setDeleteConfirm] = useState(null);
+  const [isLoading, setIsLoading] = useState(false);
 
   // Form State
   const [formData, setFormData] = useState({
@@ -22,11 +26,55 @@ export default function KelolaLayananPage() {
     harga: "",
   });
 
+  const loadData = async () => {
+    setIsLoading(true);
+    try {
+      const [resSrv, resCat] = await Promise.all([
+        fetch("/api/layanan"),
+        fetch("/api/kategori-jasa"),
+      ]);
+      const jsonSrv = await resSrv.json();
+      const jsonCat = await resCat.json();
+
+      if (jsonCat.success && Array.isArray(jsonCat.data) && jsonCat.data.length > 0) {
+        setCategories(
+          jsonCat.data.map((c) => ({
+            id: `KAT-${String(c.id).padStart(2, "0")}`,
+            rawId: c.id,
+            nama: c.nama_kategori,
+          }))
+        );
+      }
+
+      if (jsonSrv.success && Array.isArray(jsonSrv.data) && jsonSrv.data.length > 0) {
+        setServices(
+          jsonSrv.data.map((s) => ({
+            id: `SRV-${String(s.id).padStart(3, "0")}`,
+            rawId: s.id,
+            kategoriId: s.kategori_id,
+            nama: s.nama_layanan,
+            kategori: s.nama_kategori,
+            deskripsi: s.deskripsi || "-",
+            harga: Number(s.harga || 0),
+          }))
+        );
+      }
+    } catch (err) {
+      console.warn("Fallback to initial dummy services:", err);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadData();
+  }, []);
+
   const openAddModal = () => {
     setEditingService(null);
     setFormData({
       nama: "",
-      kategori: initialCategories[0]?.nama || "Teknisi Komputer",
+      kategori: categories[0]?.nama || "Teknisi Komputer",
       deskripsi: "",
       harga: "",
     });
@@ -44,44 +92,130 @@ export default function KelolaLayananPage() {
     setIsModalOpen(true);
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     if (!formData.nama.trim()) return;
 
     const numericPrice = parseInt(formData.harga.replace(/[^0-9]/g, ""), 10) || 0;
 
-    if (editingService) {
-      setServices((prev) =>
-        prev.map((s) =>
-          s.id === editingService.id
-            ? {
-              ...s,
-              nama: formData.nama,
-              kategori: formData.kategori,
-              deskripsi: formData.deskripsi,
-              harga: numericPrice,
-            }
-            : s
-        )
-      );
-    } else {
-      const newSrv = {
-        id: `SRV-0${services.length + 1}`,
-        nama: formData.nama,
-        kategori: formData.kategori,
-        deskripsi: formData.deskripsi,
-        harga: numericPrice,
-      };
-      setServices((prev) => [...prev, newSrv]);
-    }
+    // Cari kategori_id
+    const matchedCategory = categories.find((c) => c.nama === formData.kategori);
+    const catId = matchedCategory?.rawId || 1;
 
-    setIsModalOpen(false);
+    try {
+      if (editingService) {
+        const targetId = editingService.rawId || editingService.id;
+        const res = await fetch(`/api/layanan/${targetId}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            kategori_id: catId,
+            nama_layanan: formData.nama.trim(),
+            deskripsi: formData.deskripsi,
+            harga: numericPrice,
+          }),
+        });
+
+        if (!res.ok) {
+          const json = await res.json();
+          showToast(json.message || "Gagal memperbarui layanan.", "error", "Gagal Update");
+          return;
+        }
+
+        setServices((prev) =>
+          prev.map((s) =>
+            s.id === editingService.id
+              ? {
+                  ...s,
+                  nama: formData.nama,
+                  kategori: formData.kategori,
+                  deskripsi: formData.deskripsi,
+                  harga: numericPrice,
+                }
+              : s
+          )
+        );
+
+        showToast(
+          `Layanan "${formData.nama}" berhasil diperbarui.`,
+          "success",
+          "Layanan Diperbarui"
+        );
+      } else {
+        const res = await fetch("/api/layanan", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            kategori_id: catId,
+            nama_layanan: formData.nama.trim(),
+            deskripsi: formData.deskripsi,
+            harga: numericPrice,
+            status: "aktif",
+          }),
+        });
+        const json = await res.json();
+
+        if (!res.ok) {
+          showToast(json.message || "Gagal menambahkan layanan.", "error", "Gagal Menambahkan");
+          return;
+        }
+
+        const createdId = json.data?.id || services.length + 1;
+
+        const newSrv = {
+          id: `SRV-${String(createdId).padStart(3, "0")}`,
+          rawId: createdId,
+          kategoriId: catId,
+          nama: formData.nama,
+          kategori: formData.kategori,
+          deskripsi: formData.deskripsi,
+          harga: numericPrice,
+        };
+        setServices((prev) => [...prev, newSrv]);
+
+        showToast(
+          `Layanan baru "${formData.nama}" berhasil ditambahkan!`,
+          "success",
+          "Layanan Ditambahkan"
+        );
+      }
+      setIsModalOpen(false);
+    } catch {
+      showToast("Terjadi kendala saat menyimpan layanan.", "error", "Gagal Menyimpan");
+      setIsModalOpen(false);
+    }
   };
 
-  const handleDelete = () => {
+  const handleDelete = async () => {
     if (deleteConfirm) {
-      setServices((prev) => prev.filter((s) => s.id !== deleteConfirm.id));
-      setDeleteConfirm(null);
+      const deletedName = deleteConfirm.nama;
+      try {
+        const targetId = deleteConfirm.rawId || deleteConfirm.id;
+        const res = await fetch(`/api/layanan/${targetId}`, { method: "DELETE" });
+        const json = await res.json();
+
+        if (!res.ok) {
+          showToast(json.message || "Layanan tidak dapat dihapus.", "error", "Gagal Menghapus");
+          return;
+        }
+
+        setServices((prev) => prev.filter((s) => s.id !== deleteConfirm.id));
+        setDeleteConfirm(null);
+
+        showToast(
+          `Layanan "${deletedName}" berhasil dihapus dari sistem.`,
+          "success",
+          "Layanan Dihapus"
+        );
+      } catch {
+        setServices((prev) => prev.filter((s) => s.id !== deleteConfirm.id));
+        setDeleteConfirm(null);
+        showToast(
+          `Layanan "${deletedName}" telah dihapus.`,
+          "info",
+          "Layanan Dihapus"
+        );
+      }
     }
   };
 

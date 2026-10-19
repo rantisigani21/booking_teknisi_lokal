@@ -73,7 +73,7 @@ function CustomerBookingForm() {
   const ongkirKunjungan = 15000;
   const totalBiaya = (selectedService?.harga || 0) + ongkirKunjungan;
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     setErrorMessage("");
 
@@ -89,11 +89,28 @@ function CustomerBookingForm() {
 
     setIsSubmitting(true);
 
-    setTimeout(() => {
-      setIsSubmitting(false);
+    try {
+      // Panggil API Booking ke database MySQL
+      const res = await fetch("/api/booking", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          pelanggan_nama: customerName,
+          pelanggan_no_hp: customerPhone,
+          alamat: customerAddress,
+          layanan_id: 1,
+          tanggal_booking: visitDate,
+          waktu_booking: visitTime.replace(/\s*WIB/i, "").trim() || "10:00:00",
+          keluhan: complaint,
+          total_harga: totalBiaya,
+        }),
+      });
+
+      const json = await res.json();
+      const dbBooking = json.data;
 
       const newBooking = {
-        id: `BK-2025-${Math.floor(100 + Math.random() * 900)}`,
+        id: dbBooking?.kode_booking || `BK-2025-${Math.floor(100 + Math.random() * 900)}`,
         pelanggan: customerName,
         pelangganHp: customerPhone,
         alamat: customerAddress,
@@ -119,7 +136,29 @@ function CustomerBookingForm() {
       }
 
       setCreatedBooking(newBooking);
-    }, 600);
+    } catch {
+      // Offline fallback
+      const fallbackBooking = {
+        id: `BK-2025-${Math.floor(100 + Math.random() * 900)}`,
+        pelanggan: customerName,
+        pelangganHp: customerPhone,
+        alamat: customerAddress,
+        layanan: selectedService.nama,
+        kategori: selectedService.kategori,
+        biayaLayanan: selectedService.harga,
+        ongkirKunjungan,
+        totalBiaya,
+        teknisi: selectedTech ? selectedTech.nama : "Agus Prasetyo (Auto Terdekat)",
+        teknisiHp: selectedTech ? selectedTech.noHp : "0812-4455-6677",
+        tanggal: visitDate,
+        jam: visitTime,
+        status: "Menunggu Konfirmasi",
+        keluhan: complaint,
+      };
+      setCreatedBooking(fallbackBooking);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (

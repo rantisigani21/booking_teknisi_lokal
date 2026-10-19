@@ -1,23 +1,81 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Search, Eye, Filter, Calendar, MapPin, Phone, User, Wrench, Tag, Check, RefreshCw } from "lucide-react";
 import Modal from "@/components/admin/Modal";
 import StatusBadge from "@/components/admin/StatusBadge";
+import { useToast } from "@/components/admin/ToastContext";
 import { initialBookings } from "@/lib/dummyData";
 
 export default function KelolaBookingPage() {
+  const { showToast } = useToast();
   const [bookings, setBookings] = useState(initialBookings);
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState("Semua");
   const [selectedBooking, setSelectedBooking] = useState(null);
+  const [isLoading, setIsLoading] = useState(false);
 
-  const updateBookingStatus = (id, newStatus) => {
+  const fetchBookings = async () => {
+    setIsLoading(true);
+    try {
+      const res = await fetch("/api/booking");
+      const json = await res.json();
+      if (json.success && Array.isArray(json.data) && json.data.length > 0) {
+        const formatted = json.data.map((b) => ({
+          id: b.kode_booking || `BK-${b.id}`,
+          rawId: b.id,
+          pelanggan: b.pelanggan_nama,
+          pelangganHp: b.pelanggan_no_hp || "-",
+          alamat: b.alamat,
+          teknisi: b.teknisi_nama || "Belum Ditugaskan",
+          layanan: b.nama_layanan,
+          kategori: b.nama_kategori,
+          tanggal: b.tanggal_booking ? String(b.tanggal_booking).slice(0, 10) : "-",
+          jam: b.waktu_booking ? `${String(b.waktu_booking).slice(0, 5)} WIB` : "-",
+          status: b.status.charAt(0).toUpperCase() + b.status.slice(1),
+          biaya: `Rp ${Number(b.total_harga || 0).toLocaleString("id-ID")}`,
+          keluhan: b.keluhan || "-",
+        }));
+        setBookings(formatted);
+      }
+    } catch (err) {
+      console.warn("Using fallback dummy bookings:", err);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchBookings();
+  }, []);
+
+  const updateBookingStatus = async (id, newStatus) => {
     setBookings((prev) =>
       prev.map((b) => (b.id === id ? { ...b, status: newStatus } : b))
     );
     if (selectedBooking && selectedBooking.id === id) {
       setSelectedBooking((prev) => ({ ...prev, status: newStatus }));
+    }
+
+    try {
+      await fetch(`/api/booking/${id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          status: newStatus.toLowerCase(),
+          catatan: `Status diubah menjadi ${newStatus} oleh Admin`,
+          diubah_oleh: 1,
+        }),
+      });
+
+      showToast(
+        `Status booking "${id}" berhasil diperbarui menjadi ${newStatus}. Log riwayat telah dicatat.`,
+        "success",
+        "Status Booking Diperbarui"
+      );
+    } catch (err) {
+      console.error("Gagal sinkronisasi status ke MySQL:", err);
+      showToast("Gagal memperbarui status ke database.", "error", "Gagal Update");
     }
   };
 
@@ -30,7 +88,7 @@ export default function KelolaBookingPage() {
       b.layanan.toLowerCase().includes(q);
 
     const matchStatus =
-      statusFilter === "Semua" ? true : b.status === statusFilter;
+      statusFilter === "Semua" ? true : b.status.toLowerCase() === statusFilter.toLowerCase();
 
     return matchSearch && matchStatus;
   });

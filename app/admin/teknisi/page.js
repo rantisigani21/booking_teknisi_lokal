@@ -1,32 +1,92 @@
 "use client";
 
-import { useState } from "react";
-import { Search, Eye, Wrench, Phone, MapPin, Star, CheckCircle, Power } from "lucide-react";
+import { useState, useEffect } from "react";
+import { Search, Eye, Wrench, Phone, MapPin, Star, CheckCircle, Power, RefreshCw } from "lucide-react";
 import Modal from "@/components/admin/Modal";
 import StatusBadge from "@/components/admin/StatusBadge";
+import { useToast } from "@/components/admin/ToastContext";
 import { initialTechnicians } from "@/lib/dummyData";
 
 export default function KelolaTeknisiPage() {
+  const { showToast } = useToast();
   const [technicians, setTechnicians] = useState(initialTechnicians);
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState("Semua");
   const [selectedTech, setSelectedTech] = useState(null);
+  const [isLoading, setIsLoading] = useState(false);
 
-  const toggleStatus = (techId) => {
-    setTechnicians((prev) =>
-      prev.map((t) => {
-        if (t.id === techId) {
-          const nextStatus = t.status === "Aktif" ? "Tidak Aktif" : "Aktif";
-          return { ...t, status: nextStatus };
+  useEffect(() => {
+    async function loadTechnicians() {
+      setIsLoading(true);
+      try {
+        const res = await fetch("/api/teknisi");
+        const json = await res.json();
+        if (json.success && Array.isArray(json.data) && json.data.length > 0) {
+          const formatted = json.data.map((t) => ({
+            id: `TEK-${String(t.id).padStart(3, "0")}`,
+            rawId: t.id,
+            nama: t.nama,
+            keahlian:
+              t.layanan && t.layanan.length > 0
+                ? t.layanan.map((l) => l.nama_layanan).slice(0, 2).join(", ")
+                : t.deskripsi || "Teknisi Umum",
+            noHp: t.no_hp || "-",
+            lokasi: t.alamat || "Kota Malang",
+            status: t.status_ketersediaan === "tersedia" ? "Aktif" : "Tidak Aktif",
+            jumlahSelesai: Number(t.jumlah_selesai || 0),
+            rating: t.rating || 4.8,
+            deskripsi: t.deskripsi,
+            rawStatus: t.status_ketersediaan,
+          }));
+          setTechnicians(formatted);
         }
-        return t;
-      })
+      } catch (err) {
+        console.warn("Fallback to initial dummy technicians:", err);
+      } finally {
+        setIsLoading(false);
+      }
+    }
+    loadTechnicians();
+  }, []);
+
+  const toggleStatus = async (techId) => {
+    const targetTech = technicians.find((t) => t.id === techId);
+    const nextStatus = targetTech?.status === "Aktif" ? "Tidak Aktif" : "Aktif";
+    const nextAvailability = nextStatus === "Aktif" ? "tersedia" : "tidak_tersedia";
+
+    setTechnicians((prev) =>
+      prev.map((t) => (t.id === techId ? { ...t, status: nextStatus } : t))
     );
     if (selectedTech && selectedTech.id === techId) {
       setSelectedTech((prev) => ({
         ...prev,
-        status: prev.status === "Aktif" ? "Tidak Aktif" : "Aktif",
+        status: nextStatus,
       }));
+    }
+
+    if (targetTech?.rawId) {
+      try {
+        await fetch(`/api/teknisi/${targetTech.rawId}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ status_ketersediaan: nextAvailability }),
+        });
+
+        showToast(
+          `Status teknisi "${targetTech.nama}" berhasil diubah menjadi ${nextStatus}.`,
+          "success",
+          "Ketersediaan Teknisi Diperbarui"
+        );
+      } catch (err) {
+        console.error("Gagal sinkronisasi status teknisi:", err);
+        showToast("Gagal memperbarui status ke database.", "error", "Gagal Update");
+      }
+    } else {
+      showToast(
+        `Status teknisi "${targetTech?.nama || techId}" diubah menjadi ${nextStatus}.`,
+        "info",
+        "Ketersediaan Teknisi Diperbarui"
+      );
     }
   };
 

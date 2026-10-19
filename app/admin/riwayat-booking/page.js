@@ -1,20 +1,58 @@
 "use client";
 
-import { useState } from "react";
-import { Search, Eye, History, CheckCircle, XCircle, Calendar, MapPin, Phone, User, Wrench } from "lucide-react";
+import { useState, useEffect } from "react";
+import { Search, Eye, History, CheckCircle, XCircle, Calendar, MapPin, Phone, User, Wrench, RefreshCw } from "lucide-react";
 import Modal from "@/components/admin/Modal";
 import StatusBadge from "@/components/admin/StatusBadge";
 import { initialBookings } from "@/lib/dummyData";
 
 export default function KelolaRiwayatBookingPage() {
-  // Only completed ("Selesai") or cancelled ("Dibatalkan") bookings
-  const historyBookings = initialBookings.filter(
+  const initialHistory = initialBookings.filter(
     (b) => b.status === "Selesai" || b.status === "Dibatalkan"
   );
-
+  const [historyBookings, setHistoryBookings] = useState(initialHistory);
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState("Semua");
   const [selectedBooking, setSelectedBooking] = useState(null);
+  const [isLoading, setIsLoading] = useState(false);
+
+  useEffect(() => {
+    async function loadHistory() {
+      setIsLoading(true);
+      try {
+        const res = await fetch("/api/booking");
+        const json = await res.json();
+        if (json.success && Array.isArray(json.data) && json.data.length > 0) {
+          const finishedOnly = json.data.filter(
+            (b) => b.status === "selesai" || b.status === "dibatalkan"
+          );
+          if (finishedOnly.length > 0) {
+            const formatted = finishedOnly.map((b) => ({
+              id: b.kode_booking || `BK-${b.id}`,
+              rawId: b.id,
+              pelanggan: b.pelanggan_nama,
+              pelangganHp: b.pelanggan_no_hp || "-",
+              alamat: b.alamat,
+              teknisi: b.teknisi_nama || "Mitra Teknisi",
+              layanan: b.nama_layanan,
+              kategori: b.nama_kategori,
+              tanggal: b.tanggal_booking ? String(b.tanggal_booking).slice(0, 10) : "-",
+              jam: b.waktu_booking ? `${String(b.waktu_booking).slice(0, 5)} WIB` : "-",
+              status: b.status.charAt(0).toUpperCase() + b.status.slice(1),
+              biaya: `Rp ${Number(b.total_harga || 0).toLocaleString("id-ID")}`,
+              keluhan: b.keluhan || "-",
+            }));
+            setHistoryBookings(formatted);
+          }
+        }
+      } catch (err) {
+        console.warn("Fallback to initial dummy history:", err);
+      } finally {
+        setIsLoading(false);
+      }
+    }
+    loadHistory();
+  }, []);
 
   const filteredHistory = historyBookings.filter((b) => {
     const q = searchTerm.toLowerCase();
@@ -25,7 +63,7 @@ export default function KelolaRiwayatBookingPage() {
       b.layanan.toLowerCase().includes(q);
 
     const matchStatus =
-      statusFilter === "Semua" ? true : b.status === statusFilter;
+      statusFilter === "Semua" ? true : b.status.toLowerCase() === statusFilter.toLowerCase();
 
     return matchSearch && matchStatus;
   });

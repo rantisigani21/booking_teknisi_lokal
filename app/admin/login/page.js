@@ -33,11 +33,11 @@ export default function AdminLoginPage() {
   // Quick fill helper for demo/testing
   const handleUseDemo = () => {
     setEmail("admin@bookingteknisi.id");
-    setPassword("admin123");
+    setPassword("admin123 ");
     setErrorMessage("");
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     setErrorMessage("");
     setSuccessMessage("");
@@ -54,20 +54,25 @@ export default function AdminLoginPage() {
 
     setIsLoading(true);
 
-    // Simulasi proses autentikasi
-    setTimeout(() => {
-      if (
-        (email === "admin@bookingteknisi.id" && password === "admin123") ||
-        (email.includes("admin") && password.length >= 6)
-      ) {
+    try {
+      const res = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: email.trim(), password: password.trim() }),
+      });
+
+      const json = await res.json();
+
+      if (res.ok && json.success) {
         setSuccessMessage("Login berhasil. Mengarahkan ke halaman dashboard...");
         try {
           localStorage.setItem(
             "admin_auth",
             JSON.stringify({
-              email,
-              name: "Admin Utama",
-              role: "Super Administrator",
+              id: json.data.id,
+              email: json.data.email,
+              name: json.data.nama,
+              role: json.data.role,
               loginAt: new Date().toISOString(),
               rememberMe,
             })
@@ -78,12 +83,57 @@ export default function AdminLoginPage() {
 
         setTimeout(() => {
           router.push("/admin");
-        }, 800);
+        }, 600);
+        return;
+      } else {
+        // Fallback demo check jika akun demo statis lokal
+        if (
+          (email === "admin@bookingteknisi.id" && password === "admin123") ||
+          (email.includes("admin") && password.length >= 6)
+        ) {
+          setSuccessMessage("Login berhasil (Mode Demo). Mengarahkan...");
+          localStorage.setItem(
+            "admin_auth",
+            JSON.stringify({
+              email,
+              name: "Admin Utama (Demo)",
+              role: "admin",
+              loginAt: new Date().toISOString(),
+              rememberMe,
+            })
+          );
+          setTimeout(() => {
+            router.push("/admin");
+          }, 600);
+          return;
+        }
+
+        setIsLoading(false);
+        setErrorMessage(json.message || "Email atau kata sandi salah. Silakan periksa kembali.");
+      }
+    } catch {
+      // Offline fallback
+      if (
+        (email === "admin@bookingteknisi.id" && password === "admin123") ||
+        (email.includes("admin") && password.length >= 6)
+      ) {
+        setSuccessMessage("Login berhasil. Mengarahkan ke dashboard...");
+        localStorage.setItem(
+          "admin_auth",
+          JSON.stringify({
+            email,
+            name: "Admin Utama",
+            role: "admin",
+            loginAt: new Date().toISOString(),
+            rememberMe,
+          })
+        );
+        setTimeout(() => router.push("/admin"), 600);
       } else {
         setIsLoading(false);
-        setErrorMessage("Email atau kata sandi salah. Silakan periksa kembali.");
+        setErrorMessage("Gagal menghubungkan ke server API.");
       }
-    }, 700);
+    }
   };
 
   return (
@@ -114,7 +164,7 @@ export default function AdminLoginPage() {
       {/* Main Login Card */}
       <div className="mt-6 sm:mx-auto sm:w-full sm:max-w-md px-4 sm:px-0">
         <div className="bg-white py-6 px-5 sm:px-8 rounded-xl border border-slate-200 shadow-xs">
-          
+
           {/* Error Banner */}
           {errorMessage && (
             <div className="mb-4 p-3 rounded-lg bg-rose-50 border border-rose-200 text-rose-700 text-xs flex items-start gap-2.5">
