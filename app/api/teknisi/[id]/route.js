@@ -8,7 +8,7 @@ export async function GET(request, { params }) {
   try {
     const { id } = await params;
 
-    const techs = await query(
+    let techs = await query(
       `SELECT 
         t.id, 
         t.user_id, 
@@ -29,11 +29,40 @@ export async function GET(request, { params }) {
       FROM teknisi t
       JOIN users u ON t.user_id = u.id
       LEFT JOIN booking b ON t.id = b.teknisi_id
-      WHERE t.id = ? OR t.user_id = ?
+      WHERE t.id = ?
       GROUP BY t.id 
       LIMIT 1`,
-      [id, id]
+      [id]
     );
+
+    if (techs.length === 0) {
+      techs = await query(
+        `SELECT 
+          t.id, 
+          t.user_id, 
+          u.nama, 
+          u.email, 
+          u.no_hp, 
+          u.foto, 
+          u.status AS status_user, 
+          t.deskripsi, 
+          t.alamat, 
+          t.latitude, 
+          t.longitude, 
+          t.status_ketersediaan, 
+          t.created_at, 
+          t.updated_at,
+          COUNT(CASE WHEN b.status = 'selesai' THEN 1 END) AS jumlah_selesai,
+          COUNT(b.id) AS total_order
+        FROM teknisi t
+        JOIN users u ON t.user_id = u.id
+        LEFT JOIN booking b ON t.id = b.teknisi_id
+        WHERE t.user_id = ?
+        GROUP BY t.id 
+        LIMIT 1`,
+        [id]
+      );
+    }
 
     if (techs.length === 0) {
       return errorResponse("Teknisi tidak ditemukan", 404);
@@ -116,19 +145,34 @@ export async function PUT(request, { params }) {
       latitude,
       longitude,
       status_ketersediaan,
+      status_user,
       layanan_ids,
     } = body;
 
-    const existing = await query("SELECT * FROM teknisi WHERE id = ? OR user_id = ? LIMIT 1", [
-      id,
-      id,
-    ]);
+    let existing = await query("SELECT * FROM teknisi WHERE id = ? LIMIT 1", [id]);
+    if (existing.length === 0) {
+      existing = await query("SELECT * FROM teknisi WHERE user_id = ? LIMIT 1", [id]);
+    }
     if (existing.length === 0) {
       return errorResponse("Teknisi tidak ditemukan", 404);
     }
 
     const current = existing[0];
     const techId = current.id;
+    const targetUserId = body.user_id || current.user_id;
+
+    // Update status_user di tabel users jika dikirim dan user adalah admin
+    if (status_user && (session.role === "admin" || !session.role)) {
+      await query("UPDATE users SET status = ? WHERE id = ?", [status_user, targetUserId]);
+    }
+
+    // Jika admin menyetujui akun (status_user = 'aktif') dan status_ketersediaan tidak dispesifikasikan,
+    // ubah status ketersediaan menjadi 'tersedia'
+    let targetAvailability =
+      status_ketersediaan !== undefined ? status_ketersediaan : current.status_ketersediaan;
+    if (status_user === "aktif" && status_ketersediaan === undefined) {
+      targetAvailability = "tersedia";
+    }
 
     await query(
       `UPDATE teknisi 
@@ -139,7 +183,7 @@ export async function PUT(request, { params }) {
         alamat !== undefined ? alamat : current.alamat,
         latitude !== undefined ? latitude : current.latitude,
         longitude !== undefined ? longitude : current.longitude,
-        status_ketersediaan !== undefined ? status_ketersediaan : current.status_ketersediaan,
+        targetAvailability,
         techId,
       ]
     );
@@ -171,10 +215,10 @@ export async function DELETE(request, { params }) {
   try {
     const { id } = await params;
 
-    const existing = await query("SELECT id FROM teknisi WHERE id = ? OR user_id = ? LIMIT 1", [
-      id,
-      id,
-    ]);
+    let existing = await query("SELECT id FROM teknisi WHERE id = ? LIMIT 1", [id]);
+    if (existing.length === 0) {
+      existing = await query("SELECT id FROM teknisi WHERE user_id = ? LIMIT 1", [id]);
+    }
     if (existing.length === 0) {
       return errorResponse("Teknisi tidak ditemukan", 404);
     }

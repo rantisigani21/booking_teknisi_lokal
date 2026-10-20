@@ -202,14 +202,14 @@ const ENDPOINTS = [
         teknisi_id: 1,
         tanggal_booking: new Date().toISOString().slice(0, 10),
         waktu_booking: "10:00:00",
-        alamat: "Jl. Veteran No. 10, Malang",
+        alamat: "Jl. A.P. Pettarani No. 10, Makassar",
         keluhan: "Laptop tidak mau masuk Windows, perlu instal ulang segera.",
         total_harga: 150000,
       },
       null,
       2
     ),
-    sampleCurl: `curl -X POST http://localhost:3000/api/booking \\\n  -H "Content-Type: application/json" \\\n  -d '{"pelanggan_id":2,"layanan_id":1,"tanggal_booking":"2026-10-20","waktu_booking":"10:00:00","alamat":"Malang","keluhan":"Laptop error"}'`,
+    sampleCurl: `curl -X POST http://localhost:3000/api/booking \\\n  -H "Content-Type: application/json" \\\n  -d '{"pelanggan_id":2,"layanan_id":1,"tanggal_booking":"2026-10-20","waktu_booking":"10:00:00","alamat":"Makassar","keluhan":"Laptop error"}'`,
   },
   {
     id: "booking-update",

@@ -20,16 +20,17 @@ import {
 export default function PelangganNavbar() {
   const pathname = usePathname();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [selectedLocation, setSelectedLocation] = useState("Klojen, Kota Malang");
+  const [selectedLocation, setSelectedLocation] = useState("Panakkukang, Kota Makassar");
   const [locationDropdownOpen, setLocationDropdownOpen] = useState(false);
   const [customerUser, setCustomerUser] = useState(null);
 
   const locations = [
-    "Klojen, Kota Malang",
-    "Lowokwaru, Kota Malang",
-    "Blimbing, Kota Malang",
-    "Sukun, Kota Malang",
-    "Kedungkandang, Kota Malang",
+    "Panakkukang, Kota Makassar",
+    "Ujung Pandang, Kota Makassar",
+    "Tamalanrea, Kota Makassar",
+    "Rappocini, Kota Makassar",
+    "Mariso, Kota Makassar",
+    "Bontoala, Kota Makassar",
   ];
 
   useEffect(() => {
@@ -106,7 +107,7 @@ export default function PelangganNavbar() {
                   Booking Teknisi
                 </span>
                 <span className="block text-[11px] font-semibold text-blue-600 uppercase tracking-wider -mt-0.5">
-                  Layanan Lokal Malang
+                  Layanan Lokal Makassar
                 </span>
               </div>
             </Link>

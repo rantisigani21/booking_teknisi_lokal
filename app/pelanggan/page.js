@@ -18,6 +18,7 @@ import {
   Tv,
   Loader2,
   AlertCircle,
+  Navigation,
 } from "lucide-react";
 
 const categoryIcons = {
@@ -52,17 +53,24 @@ export default function PelangganDashboardPage() {
   const [categories, setCategories] = useState([]);
   const [services, setServices] = useState([]);
   const [technicians, setTechnicians] = useState([]);
+  const [activeBookings, setActiveBookings] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
   const [userNama, setUserNama] = useState("Pelanggan");
+  const [pelangganId, setPelangganId] = useState(null);
 
   useEffect(() => {
+    let pId = null;
     // Ambil info user dari localStorage
     try {
       const raw = localStorage.getItem("customer_auth");
       if (raw) {
         const u = JSON.parse(raw);
         if (u.nama) setUserNama(u.nama.split(" ")[0]);
+        if (u.id) {
+          pId = u.id;
+          setPelangganId(u.id);
+        }
       }
     } catch {}
 
@@ -71,21 +79,36 @@ export default function PelangganDashboardPage() {
       setIsLoading(true);
       setError("");
       try {
-        const [catRes, svcRes, techRes] = await Promise.all([
+        const fetchPromises = [
           fetch("/api/kategori-jasa?status=aktif"),
           fetch("/api/layanan?status=aktif"),
           fetch("/api/teknisi?status_ketersediaan=tersedia"),
-        ]);
+        ];
 
-        const [catJson, svcJson, techJson] = await Promise.all([
-          catRes.json(),
-          svcRes.json(),
-          techRes.json(),
-        ]);
+        if (pId) {
+          fetchPromises.push(fetch(`/api/booking?pelanggan_id=${pId}`));
+        }
+
+        const responses = await Promise.all(fetchPromises);
+        const [catRes, svcRes, techRes, bookingRes] = responses;
+
+        const catJson = await catRes.json();
+        const svcJson = await svcRes.json();
+        const techJson = await techRes.json();
 
         if (catJson.success) setCategories(catJson.data || []);
         if (svcJson.success) setServices(svcJson.data || []);
         if (techJson.success) setTechnicians(techJson.data || []);
+
+        if (bookingRes) {
+          const bookingJson = await bookingRes.json();
+          if (bookingJson.success && Array.isArray(bookingJson.data)) {
+            const active = bookingJson.data.filter((b) =>
+              ["menunggu", "diterima", "diproses"].includes((b.status || "").toLowerCase())
+            );
+            setActiveBookings(active);
+          }
+        }
       } catch {
         setError("Gagal memuat data. Periksa koneksi Anda.");
       } finally {
@@ -111,6 +134,8 @@ export default function PelangganDashboardPage() {
     (t) => t.status_ketersediaan === "tersedia"
   );
 
+  const latestActive = activeBookings.length > 0 ? activeBookings[0] : null;
+
   return (
     <div className="space-y-6">
       {/* Welcome Banner */}
@@ -118,7 +143,7 @@ export default function PelangganDashboardPage() {
         <div>
           <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-blue-50 text-blue-700 text-xs font-semibold mb-2">
             <ShieldCheck className="w-3.5 h-3.5" />
-            Layanan Teknisi Panggilan Resmi Area Kota Malang
+            Layanan Teknisi Panggilan Resmi Area Kota Makassar
           </div>
           <h2 className="text-xl font-bold text-slate-900">
             Halo, {userNama}! 👋
@@ -136,6 +161,37 @@ export default function PelangganDashboardPage() {
           <span>Buat Pesanan Sekarang</span>
         </Link>
       </div>
+
+      {/* Banner Pesanan Aktif jika ada */}
+      {latestActive && (
+        <div className="p-4 bg-blue-50/70 border border-blue-200 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs">
+          <div className="flex items-start gap-3">
+            <div className="w-9 h-9 rounded-lg bg-blue-600 text-white flex items-center justify-center shrink-0 mt-0.5">
+              <Wrench className="w-4 h-4" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-bold text-blue-900 font-mono">
+                  {latestActive.kode_booking}
+                </span>
+                <span className="px-2 py-0.5 bg-amber-100 text-amber-800 rounded text-[10px] font-bold border border-amber-200 uppercase">
+                  {latestActive.status}
+                </span>
+              </div>
+              <p className="text-xs font-medium text-slate-700 mt-0.5">
+                {latestActive.nama_layanan} — Teknisi: <strong>{latestActive.teknisi_nama || "Menunggu penugasan"}</strong>
+              </p>
+            </div>
+          </div>
+          <Link
+            href="/pelanggan/riwayat-booking"
+            className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-semibold transition-colors flex items-center gap-1.5 self-start sm:self-auto shrink-0 shadow-xs"
+          >
+            <span>Pantau Status</span>
+            <ArrowRight className="w-3.5 h-3.5" />
+          </Link>
+        </div>
+      )}
 
       {/* 4 Kartu Statistik */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
@@ -158,16 +214,43 @@ export default function PelangganDashboardPage() {
         </div>
 
         <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-xs">
-          <span className="text-xs text-slate-500 font-medium">Garansi Servis</span>
-          <p className="text-2xl font-bold text-slate-900 mt-1">30 Hari</p>
-          <span className="text-[11px] text-slate-400 mt-0.5 block">Jaminan Uang Kembali</span>
+          <span className="text-xs text-slate-500 font-medium">Pesanan Aktif Anda</span>
+          <p className="text-2xl font-bold text-amber-600 mt-1">
+            {isLoading ? "—" : activeBookings.length}
+          </p>
+          <span className="text-[11px] text-slate-400 mt-0.5 block">
+            {activeBookings.length > 0 ? "Dalam Pengerjaan" : "Tidak ada aktif"}
+          </span>
         </div>
 
         <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-xs">
-          <span className="text-xs text-slate-500 font-medium">Sistem Pembayaran</span>
-          <p className="text-xl font-bold text-emerald-600 mt-1 truncate">Bayar di Tempat</p>
-          <span className="text-[11px] text-slate-400 mt-0.5 block">Tunai atau Transfer</span>
+          <span className="text-xs text-slate-500 font-medium">Garansi Servis</span>
+          <p className="text-xl font-bold text-emerald-600 mt-1 truncate">30 Hari</p>
+          <span className="text-[11px] text-slate-400 mt-0.5 block">Jaminan Uang Kembali</span>
         </div>
+      </div>
+
+      {/* Banner Peta Lokasi Teknisi Terdekat */}
+      <div className="bg-linear-to-r from-blue-900 via-indigo-900 to-slate-900 rounded-xl p-5 text-white shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div className="space-y-1">
+          <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-blue-800/80 text-blue-200 text-[11px] font-semibold">
+            <MapPin className="w-3.5 h-3.5 text-rose-400" />
+            Peta Geografis & Estimasi Jarak
+          </div>
+          <h3 className="text-base font-bold text-white">
+            Cari Teknisi Terdekat dari Titik Lokasi Anda
+          </h3>
+          <p className="text-xs text-blue-200 max-w-xl">
+            Deteksi jarak kilometer, lihat sebaran mitra teknisi siaga secara interaktif, dan pesan teknisi dengan jarak tempuh tercepat.
+          </p>
+        </div>
+        <Link
+          href="/pelanggan/peta-teknisi"
+          className="px-4 py-2.5 bg-white text-blue-900 hover:bg-blue-50 rounded-lg text-xs font-bold transition-all shadow-md flex items-center justify-center gap-2 shrink-0 self-start md:self-auto cursor-pointer"
+        >
+          <Navigation className="w-4 h-4 text-blue-600" />
+          <span>Buka Peta Teknisi</span>
+        </Link>
       </div>
 
       {/* Error Banner */}
@@ -293,9 +376,19 @@ export default function PelangganDashboardPage() {
 
       {/* Grid Mitra Teknisi Terdekat */}
       <div className="space-y-3 pt-2">
-        <h3 className="text-base font-bold text-slate-900">
-          Mitra Teknisi Siaga ({isLoading ? "..." : availableTechs.length})
-        </h3>
+        <div className="flex items-center justify-between">
+          <h3 className="text-base font-bold text-slate-900">
+            Mitra Teknisi Siaga ({isLoading ? "..." : availableTechs.length})
+          </h3>
+          <Link
+            href="/pelanggan/peta-teknisi"
+            className="text-xs font-semibold text-blue-600 hover:text-blue-700 flex items-center gap-1 hover:underline cursor-pointer"
+          >
+            <MapPin className="w-3.5 h-3.5 text-rose-500" />
+            <span>Buka Peta Lengkap</span>
+            <ArrowRight className="w-3 h-3" />
+          </Link>
+        </div>
 
         {isLoading ? (
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -339,7 +432,7 @@ export default function PelangganDashboardPage() {
                     </p>
                     <p className="text-[10px] text-slate-500 flex items-center gap-1 mt-1">
                       <MapPin className="w-3 h-3 text-rose-500" />
-                      <span className="truncate">{tech.alamat || "Kota Malang"}</span>
+                      <span className="truncate">{tech.alamat || "Kota Makassar"}</span>
                       <span>•</span>
                       <span>{tech.jumlah_selesai || 0} Servis</span>
                     </p>

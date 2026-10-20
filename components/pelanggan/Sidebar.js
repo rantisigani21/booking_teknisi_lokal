@@ -1,5 +1,6 @@
 "use client";
 
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
@@ -16,6 +17,7 @@ import {
 
 const navigationItems = [
   { name: "Beranda & Layanan", href: "/pelanggan", icon: LayoutDashboard },
+  { name: "Peta Teknisi Terdekat", href: "/pelanggan/peta-teknisi", icon: MapPin },
   { name: "Pesan Teknisi", href: "/pelanggan/booking", icon: CalendarCheck },
   { name: "Riwayat Booking", href: "/pelanggan/riwayat-booking", icon: History },
   { name: "Profil Pelanggan", href: "/pelanggan/profil", icon: UserCircle },
@@ -24,6 +26,39 @@ const navigationItems = [
 export default function PelangganSidebar({ isOpen, onClose }) {
   const pathname = usePathname();
   const router = useRouter();
+
+  const [user, setUser] = useState({
+    nama: "Pelanggan",
+    initials: "P",
+    role: "Pelanggan Terdaftar",
+  });
+
+  useEffect(() => {
+    const loadUser = () => {
+      try {
+        const raw = localStorage.getItem("customer_auth");
+        if (raw) {
+          const u = JSON.parse(raw);
+          const name = u.nama || "Pelanggan";
+          const words = name.trim().split(" ").filter(Boolean);
+          const initials =
+            words.length > 1
+              ? (words[0][0] + words[1][0]).toUpperCase()
+              : name.slice(0, 2).toUpperCase();
+
+          setUser({
+            nama: name,
+            initials: initials || "P",
+            role: u.role || "Pelanggan Terdaftar",
+          });
+        }
+      } catch {}
+    };
+
+    loadUser();
+    window.addEventListener("storage", loadUser);
+    return () => window.removeEventListener("storage", loadUser);
+  }, []);
 
   const handleLogout = async () => {
     if (confirm("Apakah Anda yakin ingin keluar dari akun pelanggan?")) {
@@ -119,16 +154,16 @@ export default function PelangganSidebar({ isOpen, onClose }) {
         {/* Bottom Section: Customer Info & Logout */}
         <div className="p-3 border-t border-slate-100 bg-slate-50/50">
           <div className="flex items-center gap-3 p-2 rounded-lg bg-white border border-slate-200/80 mb-2">
-            <div className="w-8 h-8 rounded-full bg-blue-600 text-white flex items-center justify-center text-xs font-semibold shrink-0">
-              SR
+            <div className="w-8 h-8 rounded-full bg-blue-600 text-white flex items-center justify-center text-xs font-semibold shrink-0 shadow-xs">
+              {user.initials}
             </div>
             <div className="overflow-hidden">
               <p className="text-xs font-semibold text-slate-900 truncate">
-                Siti Rahmawati
+                {user.nama}
               </p>
               <p className="text-[10px] text-slate-500 truncate flex items-center gap-1">
                 <ShieldCheck className="w-3 h-3 text-emerald-600 inline shrink-0" />
-                Pelanggan Terdaftar
+                {user.role}
               </p>
             </div>
           </div>

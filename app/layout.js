@@ -13,7 +13,7 @@ const geistMono = Geist_Mono({
 
 export const metadata = {
   title: "Booking Teknisi Lokal — Layanan Servis Komputer, Laptop & Elektronik",
-  description: "Platform pemesanan jasa teknisi panggilan terpercaya di area Kota Malang. Cepat, transparan, dan bergaransi resmi.",
+  description: "Platform pemesanan jasa teknisi panggilan terpercaya di area Kota Makassar. Cepat, transparan, dan bergaransi resmi.",
 };
 
 export default function RootLayout({ children }) {

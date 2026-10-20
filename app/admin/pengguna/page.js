@@ -27,12 +27,12 @@ export default function KelolaPenggunaPage() {
             noHp: u.no_hp || "-",
             tanggalDaftar: u.created_at
               ? new Date(u.created_at).toLocaleDateString("id-ID", {
-                  day: "2-digit",
-                  month: "short",
-                  year: "numeric",
-                })
+                day: "2-digit",
+                month: "short",
+                year: "numeric",
+              })
               : "Baru saja",
-            alamat: "Kota Malang",
+            alamat: "Kota Makassar",
             totalBooking: u.total_booking || 0,
             status: u.status === "aktif" ? "Aktif" : "Tidak Aktif",
           }));

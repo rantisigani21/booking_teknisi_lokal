@@ -13,343 +13,331 @@ import {
   X,
   MessageCircle,
   ExternalLink,
-  ChevronRight,
   ChevronLeft,
   Navigation,
-  FileCheck,
+  Loader2,
+  AlertCircle,
+  RefreshCw,
 } from "lucide-react";
 
 export default function TeknisiActiveBookingPage() {
-  const [activeBookings, setActiveBookings] = useState([
-    {
-      id: "BK-2025-001",
-      pelanggan: "Siti Rahmawati",
-      pelangganHp: "0812-3456-7890",
-      alamat: "Jl. Melati No. 14, Lowokwaru, Malang",
-      layanan: "Servis Motherboard & Ganti Komponen PC",
-      kategori: "Teknisi Komputer",
-      tanggal: "15 Mar 2025",
-      jam: "10:00 WIB",
-      status: "Diproses",
-      biaya: "Rp 165.000",
-      keluhan: "Komputer mati total saat dinyalakan, kipas power supply tidak berputar.",
-      tahapStatus: "Menuju Lokasi", // 'Menuju Lokasi' | 'Pengerjaan' | 'Selesai'
-    },
-  ]);
-
+  const [activeBookings, setActiveBookings] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isUpdatingId, setIsUpdatingId] = useState(null);
   const [selectedBooking, setSelectedBooking] = useState(null);
   const [successToast, setSuccessToast] = useState("");
+  const [error, setError] = useState("");
+  const [techId, setTechId] = useState(null);
+
+  const fetchActiveBookings = async (currentTechId) => {
+    setIsLoading(true);
+    setError("");
+    try {
+      const url = currentTechId
+        ? `/api/booking?teknisi_id=${currentTechId}`
+        : "/api/booking";
+      const res = await fetch(url);
+      const json = await res.json();
+      if (json.success && Array.isArray(json.data)) {
+        // Filter pesanan yang aktif (diterima atau diproses)
+        const active = json.data.filter((b) =>
+          ["diterima", "diproses"].includes((b.status || "").toLowerCase())
+        );
+        setActiveBookings(active);
+      } else {
+        setError("Gagal memuat daftar booking aktif.");
+      }
+    } catch {
+      setError("Gagal menghubungkan ke server.");
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   useEffect(() => {
+    let tId = null;
     try {
-      const locallyAccepted = JSON.parse(
-        localStorage.getItem("technician_active_bookings") || "[]"
-      );
-      if (locallyAccepted.length > 0) {
-        setActiveBookings((prev) => [...locallyAccepted, ...prev]);
+      const raw = localStorage.getItem("technician_auth");
+      if (raw) {
+        const t = JSON.parse(raw);
+        if (t.teknisi?.id) tId = t.teknisi.id;
+        if (t.techId) tId = t.techId;
+        setTechId(tId);
       }
-    } catch (e) {
-      console.error(e);
-    }
+    } catch {}
+
+    const init = async () => {
+      if (!tId) {
+        try {
+          const meRes = await fetch("/api/auth/me");
+          const meJson = await meRes.json();
+          if (meRes.ok && meJson.success && meJson.data?.teknisi?.id) {
+            tId = meJson.data.teknisi.id;
+            setTechId(tId);
+          }
+        } catch {}
+      }
+      fetchActiveBookings(tId);
+    };
+
+    init();
   }, []);
 
-  // Update status kerja pengerjaan
-  const handleUpdateTahap = (bookingId, nextTahap) => {
-    const updated = activeBookings.map((b) => {
-      if (b.id === bookingId) {
-        return {
-          ...b,
-          tahapStatus: nextTahap,
-          status: nextTahap === "Selesai" ? "Selesai" : "Diproses",
-        };
-      }
-      return b;
-    });
+  // Update status kerja / tahap pengerjaan
+  const handleUpdateTahap = async (bookingId, nextTahap) => {
+    setIsUpdatingId(bookingId);
+    const isFinishing = nextTahap === "Selesai";
+    const newStatus = isFinishing ? "selesai" : "diproses";
 
-    setActiveBookings(updated);
-
-    if (selectedBooking && selectedBooking.id === bookingId) {
-      setSelectedBooking({
-        ...selectedBooking,
-        tahapStatus: nextTahap,
-        status: nextTahap === "Selesai" ? "Selesai" : "Diproses",
+    try {
+      const res = await fetch(`/api/booking/${bookingId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          status: newStatus,
+          catatan: isFinishing
+            ? "Pengerjaan servis selesai. Perangkat telah diperbaiki dan dites normal."
+            : `Teknisi memperbarui tahap pengerjaan: ${nextTahap}`,
+        }),
       });
-    }
 
-    setSuccessToast(`Status pesanan ${bookingId} diperbarui: ${nextTahap}`);
-    setTimeout(() => setSuccessToast(""), 3500);
+      const json = await res.json();
+      if (res.ok && json.success) {
+        if (isFinishing) {
+          // Hapus dari list aktif karena sudah selesai
+          setActiveBookings((prev) => prev.filter((b) => b.id !== bookingId));
+          setSuccessToast(`Pesanan #${bookingId} berhasil diselesaikan! Riwayat servis telah diperbarui.`);
+        } else {
+          setActiveBookings((prev) =>
+            prev.map((b) =>
+              b.id === bookingId
+                ? { ...b, status: newStatus, catatan_terakhir: nextTahap }
+                : b
+            )
+          );
+          setSuccessToast(`Tahap kerja pesanan #${bookingId} diperbarui: ${nextTahap}`);
+        }
+
+        if (selectedBooking && selectedBooking.id === bookingId) {
+          if (isFinishing) setSelectedBooking(null);
+          else setSelectedBooking((prev) => ({ ...prev, status: newStatus }));
+        }
+
+        setTimeout(() => setSuccessToast(""), 4000);
+      } else {
+        alert(json.message || "Gagal memperbarui status.");
+      }
+    } catch {
+      alert("Gagal menghubungi server.");
+    } finally {
+      setIsUpdatingId(null);
+    }
   };
 
   return (
     <div className="space-y-6">
-        {/* Breadcrumb & Header */}
-        <div>
-          <Link
-            href="/teknisi"
-            className="inline-flex items-center gap-1.5 text-xs text-slate-500 hover:text-slate-800 transition-colors mb-2"
-          >
-            <ChevronLeft className="w-3.5 h-3.5" />
-            <span>Kembali ke Beranda Teknisi</span>
-          </Link>
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-            <div>
-              <h1 className="text-xl sm:text-2xl font-bold text-slate-900 tracking-tight">
-                Booking Aktif yang Ditangani
-              </h1>
-              <p className="text-xs text-slate-500 mt-0.5">
-                Pesanan servis yang telah Anda terima dan sedang dalam proses pengerjaan.
-              </p>
-            </div>
-            <span className="px-3 py-1 bg-blue-50 text-blue-700 border border-blue-200 rounded-lg text-xs font-bold self-start sm:self-auto">
-              {activeBookings.filter((b) => b.tahapStatus !== "Selesai").length} Pesanan Berjalan
+      {/* Breadcrumb & Header */}
+      <div>
+        <Link
+          href="/teknisi"
+          className="inline-flex items-center gap-1.5 text-xs text-slate-500 hover:text-slate-800 transition-colors mb-2 cursor-pointer"
+        >
+          <ChevronLeft className="w-3.5 h-3.5" />
+          <span>Kembali ke Beranda Teknisi</span>
+        </Link>
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+          <div>
+            <h1 className="text-xl sm:text-2xl font-bold text-slate-900 tracking-tight">
+              Booking Aktif yang Ditangani
+            </h1>
+            <p className="text-xs text-slate-500 mt-0.5">
+              Pesanan servis pelanggan yang telah Anda terima dan sedang dalam proses pengerjaan.
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => fetchActiveBookings(techId)}
+              className="p-2 bg-white border border-slate-200 rounded-lg text-slate-600 hover:text-blue-600 hover:bg-slate-50 transition-colors cursor-pointer"
+              title="Refresh Pesanan Aktif"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? "animate-spin" : ""}`} />
+            </button>
+            <span className="px-3 py-1.5 bg-blue-50 text-blue-700 border border-blue-200 rounded-lg text-xs font-bold self-start sm:self-auto">
+              {activeBookings.length} Pesanan Berjalan
             </span>
           </div>
         </div>
+      </div>
 
-        {/* Success Alert */}
-        {successToast && (
-          <div className="p-3.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs flex items-center gap-2.5 animate-in fade-in">
-            <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-            <span className="font-medium">{successToast}</span>
-          </div>
-        )}
+      {/* Success Alert */}
+      {successToast && (
+        <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-xl flex items-center gap-3 text-emerald-800 text-xs sm:text-sm animate-in fade-in">
+          <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+          <span className="font-semibold">{successToast}</span>
+        </div>
+      )}
 
-        {/* List of Active Bookings */}
-        {activeBookings.length === 0 ? (
-          <div className="bg-white border border-slate-200 rounded-xl p-10 text-center">
-            <CalendarCheck className="w-10 h-10 text-slate-300 mx-auto mb-3" />
-            <h3 className="text-sm font-bold text-slate-900">
-              Tidak Ada Booking Aktif
-            </h3>
-            <p className="text-xs text-slate-500 mt-1 max-w-sm mx-auto">
-              Saat ini Anda tidak memiliki jadwal pengerjaan aktif. Periksa permintaan terbaru di halaman beranda.
+      {/* Error Alert */}
+      {error && (
+        <div className="p-4 bg-rose-50 border border-rose-200 rounded-xl flex items-center gap-2 text-rose-700 text-xs">
+          <AlertCircle className="w-4 h-4 shrink-0" />
+          <span>{error}</span>
+        </div>
+      )}
+
+      {/* List Kartu Booking Aktif */}
+      {isLoading ? (
+        <div className="bg-white border border-slate-200 rounded-xl p-12 text-center text-xs text-slate-400">
+          <Loader2 className="w-6 h-6 animate-spin text-blue-600 mx-auto mb-2" />
+          <span>Memuat data booking aktif...</span>
+        </div>
+      ) : activeBookings.length === 0 ? (
+        <div className="bg-white border border-slate-200 rounded-xl p-12 text-center space-y-3">
+          <CalendarCheck className="w-10 h-10 text-slate-300 mx-auto" />
+          <div>
+            <h3 className="text-sm font-bold text-slate-800">Tidak Ada Booking Aktif</h3>
+            <p className="text-xs text-slate-400 mt-1">
+              Saat ini tidak ada pesanan yang sedang berjalan. Buka beranda untuk melihat permintaan servis baru.
             </p>
-            <Link
-              href="/teknisi"
-              className="mt-4 inline-block px-4 py-2 bg-blue-600 text-white rounded-lg text-xs font-semibold"
-            >
-              Lihat Permintaan Masuk
-            </Link>
           </div>
-        ) : (
-          <div className="space-y-4">
-            {activeBookings.map((b) => (
+          <Link
+            href="/teknisi"
+            className="inline-flex items-center gap-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-semibold shadow-xs transition-colors"
+          >
+            <span>Cek Permintaan Masuk</span>
+          </Link>
+        </div>
+      ) : (
+        <div className="space-y-4">
+          {activeBookings.map((booking) => {
+            const waNumber = (booking.pelanggan_no_hp || "").replace(/\D/g, "").replace(/^0/, "62");
+            const gmapsUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(booking.alamat || "Makassar")}`;
+
+            return (
               <div
-                key={b.id}
-                className="bg-white border border-slate-200 rounded-xl p-5 shadow-xs space-y-4 hover:border-slate-300 transition-colors"
+                key={booking.id}
+                className="bg-white border border-slate-200 rounded-xl p-5 shadow-xs space-y-4 hover:border-blue-300 transition-colors"
               >
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-slate-100">
+                {/* Header Card */}
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-3 border-b border-slate-100 gap-2">
                   <div className="flex items-center gap-2.5">
-                    <span className="font-mono text-xs font-bold text-slate-900 bg-slate-100 px-2.5 py-1 rounded">
-                      {b.id}
+                    <span className="font-mono font-bold text-slate-900 bg-slate-100 px-2.5 py-1 rounded text-xs">
+                      {booking.kode_booking}
                     </span>
-                    <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200">
-                      {b.tahapStatus || "Menuju Lokasi"}
+                    <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-blue-50 text-blue-700 border border-blue-200">
+                      {booking.status}
                     </span>
                   </div>
 
-                  <span className="text-xs text-slate-500 font-medium">
-                    Jadwal: {b.tanggal} ({b.jam})
+                  <span className="text-xs text-slate-400">
+                    Jadwal: {new Date(booking.tanggal_booking).toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric" })} ({booking.waktu_booking})
                   </span>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
-                  {/* Info Layanan & Pelanggan */}
-                  <div className="md:col-span-8 space-y-2 text-xs">
-                    <h3 className="text-sm font-bold text-slate-900">
-                      {b.layanan}
-                    </h3>
-                    <p className="text-slate-600">
-                      Pelanggan: <strong className="text-slate-900">{b.pelanggan}</strong> ({b.pelangganHp || b.noHp})
-                    </p>
-                    <p className="text-slate-600 flex items-start gap-1">
-                      <MapPin className="w-3.5 h-3.5 text-rose-500 shrink-0 mt-0.5" />
-                      <span>{b.alamat}</span>
-                    </p>
-                    <div className="p-2.5 bg-slate-50 rounded-lg text-[11px] text-slate-600 border border-slate-100 italic">
-                      &ldquo;{b.keluhan}&rdquo;
+                {/* Info Layanan & Pelanggan */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <div>
+                      <span className="text-[10px] font-semibold text-blue-600 uppercase tracking-wider block">
+                        {booking.nama_kategori}
+                      </span>
+                      <h3 className="text-base font-bold text-slate-900">{booking.nama_layanan}</h3>
                     </div>
+
+                    {booking.keluhan && (
+                      <div className="p-3 bg-slate-50 border border-slate-200/80 rounded-lg text-xs">
+                        <span className="text-[10px] font-bold text-slate-400 block mb-0.5">Catatan Kerusakan Pelanggan:</span>
+                        <p className="text-slate-700 italic">&ldquo;{booking.keluhan}&rdquo;</p>
+                      </div>
+                    )}
                   </div>
 
-                  {/* Actions & Biaya */}
-                  <div className="md:col-span-4 flex flex-col justify-between pt-3 md:pt-0 border-t md:border-t-0 border-slate-100 text-xs">
-                    <div>
-                      <span className="text-[10px] text-slate-400 block">Total Biaya Servis</span>
-                      <span className="text-base font-bold text-blue-600">
-                        {typeof b.biayaTotal === "number"
-                          ? `Rp ${b.biayaTotal.toLocaleString("id-ID")}`
-                          : b.biaya || "Rp 150.000"}
-                      </span>
+                  {/* Info Lokasi & Kontak Pelanggan */}
+                  <div className="p-3.5 bg-slate-50/70 border border-slate-200/80 rounded-xl space-y-3 text-xs">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <User className="w-4 h-4 text-slate-400" />
+                        <span className="font-bold text-slate-800">{booking.pelanggan_nama}</span>
+                      </div>
+                      <span className="font-mono text-slate-500 text-[11px]">{booking.pelanggan_no_hp}</span>
                     </div>
 
-                    <div className="space-y-2 mt-4">
-                      {/* Tombol Lihat Detail Booking */}
-                      <button
-                        type="button"
-                        onClick={() => setSelectedBooking(b)}
-                        className="w-full py-2 px-3 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
-                      >
-                        <span>Lihat Detail Booking</span>
-                        <ChevronRight className="w-3.5 h-3.5" />
-                      </button>
+                    <div className="flex items-start gap-2">
+                      <MapPin className="w-4 h-4 text-rose-500 shrink-0 mt-0.5" />
+                      <span className="text-slate-700">{booking.alamat}</span>
+                    </div>
 
-                      {/* Quick Whatsapp */}
+                    {/* Tombol Kontak Cepat */}
+                    <div className="flex items-center gap-2 pt-2 border-t border-slate-200/60">
+                      {waNumber && (
+                        <a
+                          href={`https://wa.me/${waNumber}?text=Halo%20${encodeURIComponent(booking.pelanggan_nama)},%20saya%20teknisi%20untuk%20servis%20${encodeURIComponent(booking.nama_layanan)}%20(Kode:%20${booking.kode_booking})`}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors shadow-xs"
+                        >
+                          <MessageCircle className="w-3.5 h-3.5" />
+                          <span>WhatsApp</span>
+                        </a>
+                      )}
+
                       <a
-                        href={`https://wa.me/62${(b.pelangganHp || b.noHp || "").replace(/[^0-9]/g, "").slice(1)}`}
+                        href={gmapsUrl}
                         target="_blank"
                         rel="noreferrer"
-                        className="w-full py-2 px-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors"
+                        className="px-3 py-1.5 bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors"
                       >
-                        <MessageCircle className="w-3.5 h-3.5" />
-                        <span>Chat WhatsApp Pelanggan</span>
+                        <Navigation className="w-3.5 h-3.5 text-blue-600" />
+                        <span>Buka Rute Maps</span>
+                        <ExternalLink className="w-3 h-3 text-slate-400" />
                       </a>
                     </div>
                   </div>
                 </div>
 
-                {/* Status Stepper Progress Bar */}
-                <div className="pt-3 border-t border-slate-100 flex flex-wrap items-center justify-between gap-2">
-                  <span className="text-[11px] text-slate-500">Tahap Pengerjaan Teknisi:</span>
-                  <div className="flex items-center gap-1.5">
+                {/* Footer: Tarif & Tombol Update Tahap Kerja */}
+                <div className="pt-3 border-t border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div>
+                    <span className="text-[10px] text-slate-400 block">Total Biaya Servis</span>
+                    <span className="text-base font-extrabold text-blue-600">
+                      Rp {Number(booking.total_harga || 0).toLocaleString("id-ID")}
+                    </span>
+                  </div>
+
+                  <div className="flex items-center gap-2 flex-wrap">
                     <button
                       type="button"
-                      onClick={() => handleUpdateTahap(b.id, "Menuju Lokasi")}
-                      className={`px-2.5 py-1 rounded text-[11px] font-medium transition-colors ${
-                        b.tahapStatus === "Menuju Lokasi"
-                          ? "bg-blue-600 text-white font-bold"
-                          : "bg-slate-100 text-slate-600 hover:bg-slate-200"
-                      }`}
+                      disabled={isUpdatingId === booking.id}
+                      onClick={() => handleUpdateTahap(booking.id, "Menuju Lokasi Pelanggan")}
+                      className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-semibold transition-colors cursor-pointer disabled:opacity-50"
                     >
-                      1. Menuju Lokasi
+                      Menuju Lokasi
                     </button>
+
                     <button
                       type="button"
-                      onClick={() => handleUpdateTahap(b.id, "Sedang Dikerjakan")}
-                      className={`px-2.5 py-1 rounded text-[11px] font-medium transition-colors ${
-                        b.tahapStatus === "Sedang Dikerjakan"
-                          ? "bg-blue-600 text-white font-bold"
-                          : "bg-slate-100 text-slate-600 hover:bg-slate-200"
-                      }`}
+                      disabled={isUpdatingId === booking.id}
+                      onClick={() => handleUpdateTahap(booking.id, "Sedang Dikerjakan")}
+                      className="px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-lg text-xs font-semibold transition-colors cursor-pointer disabled:opacity-50"
                     >
-                      2. Sedang Dikerjakan
+                      Mulai Kerjakan
                     </button>
+
                     <button
                       type="button"
-                      onClick={() => handleUpdateTahap(b.id, "Selesai")}
-                      className={`px-2.5 py-1 rounded text-[11px] font-medium transition-colors ${
-                        b.tahapStatus === "Selesai"
-                          ? "bg-emerald-600 text-white font-bold"
-                          : "bg-slate-100 text-slate-600 hover:bg-slate-200"
-                      }`}
+                      disabled={isUpdatingId === booking.id}
+                      onClick={() => handleUpdateTahap(booking.id, "Selesai")}
+                      className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold shadow-xs flex items-center gap-1 transition-colors cursor-pointer disabled:opacity-50"
                     >
-                      3. Servis Selesai & Lunas
+                      <CheckCircle2 className="w-3.5 h-3.5" />
+                      <span>Tandai Selesai</span>
                     </button>
                   </div>
                 </div>
               </div>
-            ))}
-          </div>
-        )}
-
-      {/* MODAL: LIHAT DETAIL BOOKING (extends Lihat Detail Booking) */}
-      {selectedBooking && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-[2px]">
-          <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-xl border border-slate-200 space-y-5 animate-in fade-in max-h-[90vh] overflow-y-auto">
-            {/* Modal Header */}
-            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-              <div>
-                <span className="text-[10px] font-bold text-blue-600 uppercase tracking-wider">
-                  Detail Booking Lapangan
-                </span>
-                <h3 className="text-base font-bold text-slate-900 font-mono">
-                  {selectedBooking.id}
-                </h3>
-              </div>
-              <button
-                type="button"
-                onClick={() => setSelectedBooking(null)}
-                className="text-slate-400 hover:text-slate-600 p-1.5 rounded-lg"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            {/* Rincian Pelanggan & Alamat */}
-            <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl space-y-2 text-xs">
-              <div className="flex items-center justify-between">
-                <span className="text-slate-500">Nama Pelanggan:</span>
-                <strong className="text-slate-900">{selectedBooking.pelanggan}</strong>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-slate-500">Nomor WhatsApp:</span>
-                <strong className="text-slate-900">{selectedBooking.pelangganHp || selectedBooking.noHp}</strong>
-              </div>
-              <div className="pt-2 border-t border-slate-200/60">
-                <span className="text-slate-500 block mb-0.5">Alamat Kunjungan:</span>
-                <p className="text-slate-800 font-medium">{selectedBooking.alamat}</p>
-                <a
-                  href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
-                    selectedBooking.alamat
-                  )}`}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="inline-flex items-center gap-1 text-[11px] text-blue-600 hover:underline font-semibold mt-1.5"
-                >
-                  <Navigation className="w-3 h-3" />
-                  <span>Buka di Google Maps Navigasi</span>
-                </a>
-              </div>
-            </div>
-
-            {/* Rincian Kerusakan & Biaya */}
-            <div className="space-y-3 text-xs">
-              <div className="p-3 bg-white border border-slate-200 rounded-xl space-y-1.5">
-                <span className="text-slate-500 block">Layanan Diminta:</span>
-                <h4 className="font-bold text-slate-900">{selectedBooking.layanan}</h4>
-                <p className="text-slate-600 bg-slate-50 p-2 rounded text-[11px] italic">
-                  &ldquo;{selectedBooking.keluhan}&rdquo;
-                </p>
-              </div>
-
-              <div className="p-3 bg-white border border-slate-200 rounded-xl flex items-center justify-between">
-                <div>
-                  <span className="text-[10px] text-slate-400 block">Metode Pembayaran</span>
-                  <span className="font-semibold text-slate-800">Bayar di Tempat (Tunai/Transfer)</span>
-                </div>
-                <div className="text-right">
-                  <span className="text-[10px] text-slate-400 block">Tagihan Total</span>
-                  <span className="text-sm font-bold text-blue-600">
-                    {typeof selectedBooking.biayaTotal === "number"
-                      ? `Rp ${selectedBooking.biayaTotal.toLocaleString("id-ID")}`
-                      : selectedBooking.biaya || "Rp 150.000"}
-                  </span>
-                </div>
-              </div>
-            </div>
-
-            {/* Aksi Update Status Langsung */}
-            <div className="pt-2 border-t border-slate-100 space-y-2">
-              <button
-                type="button"
-                onClick={() => {
-                  handleUpdateTahap(selectedBooking.id, "Selesai");
-                  setSelectedBooking(null);
-                }}
-                className="w-full py-2.5 px-4 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-semibold flex items-center justify-center gap-2 transition-colors cursor-pointer"
-              >
-                <CheckCircle2 className="w-4 h-4" />
-                <span>Tandai Servis Telah Selesai & Lunas</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setSelectedBooking(null)}
-                className="w-full py-2 px-4 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-semibold transition-colors"
-              >
-                Tutup
-              </button>
-            </div>
-          </div>
+            );
+          })}
         </div>
       )}
     </div>

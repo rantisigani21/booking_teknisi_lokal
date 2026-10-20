@@ -13,6 +13,7 @@ import {
   Loader2,
   AlertCircle,
   RefreshCw,
+  Ban,
 } from "lucide-react";
 
 const STATUS_MAP = {
@@ -48,6 +49,8 @@ export default function PelangganRiwayatPage() {
   const [activeTab, setActiveTab] = useState("Semua");
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedBooking, setSelectedBooking] = useState(null);
+  const [isLoadingDetail, setIsLoadingDetail] = useState(false);
+  const [isCancelling, setIsCancelling] = useState(false);
   const [pelangganId, setPelangganId] = useState(null);
 
   const fetchBookings = async (pId) => {
@@ -72,19 +75,77 @@ export default function PelangganRiwayatPage() {
   };
 
   useEffect(() => {
-    let pId = null;
-    try {
-      const raw = localStorage.getItem("customer_auth");
-      if (raw) {
-        const u = JSON.parse(raw);
-        if (u.id) {
-          pId = u.id;
-          setPelangganId(u.id);
+    const initAuth = async () => {
+      let pId = null;
+      try {
+        const raw = localStorage.getItem("customer_auth");
+        if (raw) {
+          const u = JSON.parse(raw);
+          if (u.id) {
+            pId = u.id;
+            setPelangganId(u.id);
+          }
         }
+      } catch {}
+
+      if (!pId) {
+        try {
+          const meRes = await fetch("/api/auth/me");
+          const meJson = await meRes.json();
+          if (meRes.ok && meJson.success && meJson.data?.id) {
+            pId = meJson.data.id;
+            setPelangganId(pId);
+          }
+        } catch {}
       }
-    } catch {}
-    fetchBookings(pId);
+
+      fetchBookings(pId);
+    };
+
+    initAuth();
   }, []);
+
+  const handleOpenDetail = async (item) => {
+    setSelectedBooking(item);
+    setIsLoadingDetail(true);
+    try {
+      const res = await fetch(`/api/booking/${item.id}`);
+      const json = await res.json();
+      if (json.success && json.data) {
+        setSelectedBooking(json.data);
+      }
+    } catch (e) {
+      console.error("Gagal mengambil detail booking:", e);
+    } finally {
+      setIsLoadingDetail(false);
+    }
+  };
+
+  const handleCancelBooking = async (bookingId) => {
+    if (!confirm("Apakah Anda yakin ingin membatalkan pesanan ini?")) return;
+    setIsCancelling(true);
+    try {
+      const res = await fetch(`/api/booking/${bookingId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          status: "dibatalkan",
+          catatan: "Dibatalkan oleh pelanggan",
+        }),
+      });
+      const json = await res.json();
+      if (res.ok && json.success) {
+        fetchBookings(pelangganId);
+        setSelectedBooking(null);
+      } else {
+        alert(json.message || "Gagal membatalkan pesanan.");
+      }
+    } catch {
+      alert("Gagal menghubungkan ke server.");
+    } finally {
+      setIsCancelling(false);
+    }
+  };
 
   const filtered = bookings.filter((item) => {
     const status = (item.status || "").toLowerCase();
@@ -121,8 +182,8 @@ export default function PelangganRiwayatPage() {
           <button
             type="button"
             onClick={() => fetchBookings(pelangganId)}
-            className="p-2 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors border border-slate-200"
-            title="Refresh"
+            className="p-2 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors border border-slate-200 cursor-pointer"
+            title="Muat Ulang"
           >
             <RefreshCw className="w-3.5 h-3.5" />
           </button>
@@ -156,7 +217,7 @@ export default function PelangganRiwayatPage() {
         </div>
 
         <div className="relative sm:w-64">
-          <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+          <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
           <input
             type="text"
             placeholder="Cari kode booking / layanan..."
@@ -175,7 +236,7 @@ export default function PelangganRiwayatPage() {
           <button
             type="button"
             onClick={() => fetchBookings(pelangganId)}
-            className="ml-auto underline"
+            className="ml-auto underline cursor-pointer"
           >
             Coba lagi
           </button>
@@ -238,7 +299,7 @@ export default function PelangganRiwayatPage() {
                   <div className="flex flex-wrap items-center gap-3 text-slate-500 text-[11px]">
                     <span className="flex items-center gap-1">
                       <Wrench className="w-3.5 h-3.5 text-blue-600" />
-                      Teknisi: <strong className="text-slate-700">{item.teknisi_nama || "Belum ditugaskan"}</strong>
+                      Teknisi: <strong className="text-slate-700">{item.teknisi_nama || "Menunggu penugasan"}</strong>
                     </span>
                     <span>•</span>
                     <span className="flex items-center gap-1 truncate">
@@ -258,7 +319,7 @@ export default function PelangganRiwayatPage() {
 
                   <button
                     type="button"
-                    onClick={() => setSelectedBooking(item)}
+                    onClick={() => handleOpenDetail(item)}
                     className="px-3.5 py-1.5 bg-slate-100 hover:bg-blue-50 text-slate-800 hover:text-blue-700 border border-slate-200 rounded-lg text-xs font-semibold transition-colors flex items-center gap-1.5 cursor-pointer"
                   >
                     <Eye className="w-3.5 h-3.5" />
@@ -287,11 +348,18 @@ export default function PelangganRiwayatPage() {
               <button
                 type="button"
                 onClick={() => setSelectedBooking(null)}
-                className="text-slate-400 hover:text-slate-600 p-1.5 rounded-lg"
+                className="text-slate-400 hover:text-slate-600 p-1.5 rounded-lg cursor-pointer"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
+
+            {isLoadingDetail && (
+              <div className="flex items-center justify-center py-2 text-slate-400 gap-2">
+                <Loader2 className="w-4 h-4 animate-spin text-blue-600" />
+                <span>Memuat riwayat status terkini...</span>
+              </div>
+            )}
 
             <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 space-y-2">
               {[
@@ -301,7 +369,7 @@ export default function PelangganRiwayatPage() {
                 })()],
                 ["Layanan", <strong key="l" className="text-slate-800">{selectedBooking.nama_layanan}</strong>],
                 ["Kategori", selectedBooking.nama_kategori || "—"],
-                ["Teknisi Ditugaskan", <strong key="t" className="text-slate-800">{selectedBooking.teknisi_nama || "Belum ditugaskan"}</strong>],
+                ["Teknisi Ditugaskan", <strong key="t" className="text-slate-800">{selectedBooking.teknisi_nama || "Menunggu penugasan"}</strong>],
                 ["No. HP Teknisi", selectedBooking.teknisi_no_hp || "—"],
                 ["Waktu Kunjungan", `${formatTanggal(selectedBooking.tanggal_booking)} (${selectedBooking.waktu_booking || "—"})`],
                 ["Total Biaya", <strong key="b" className="text-blue-600 text-sm">Rp {Number(selectedBooking.total_harga || 0).toLocaleString("id-ID")}</strong>],
@@ -325,34 +393,61 @@ export default function PelangganRiwayatPage() {
               </div>
             )}
 
-            {/* Riwayat Status */}
-            {selectedBooking.riwayat_status?.length > 0 && (
-              <div className="space-y-2">
-                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Riwayat Status</p>
-                {selectedBooking.riwayat_status.map((r) => (
-                  <div key={r.id} className="flex gap-2 text-[11px]">
-                    <span className="text-slate-400 shrink-0">{formatTanggal(r.created_at)}</span>
-                    <span className="text-slate-700">{r.catatan}</span>
-                  </div>
-                ))}
+            {/* Riwayat Status Log */}
+            {selectedBooking.riwayat_status && selectedBooking.riwayat_status.length > 0 && (
+              <div className="space-y-2 p-3 bg-slate-50/70 border border-slate-200 rounded-xl">
+                <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                  Kronologi Status Pengerjaan
+                </p>
+                <div className="space-y-2">
+                  {selectedBooking.riwayat_status.map((r) => (
+                    <div key={r.id} className="flex items-start gap-2.5 text-[11px]">
+                      <span className="text-slate-400 shrink-0 text-[10px]">
+                        {formatTanggal(r.created_at)}
+                      </span>
+                      <div className="flex-1">
+                        <span className="font-semibold text-slate-800 uppercase text-[10px] mr-1.5 px-1.5 py-0.5 bg-slate-200 rounded">
+                          {r.status}
+                        </span>
+                        <span className="text-slate-600">{r.catatan || "Pembaruan status"}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
 
-            <div className="pt-2 border-t border-slate-100 flex items-center gap-2">
-              <a
-                href={`https://wa.me/6281234567890?text=Halo%20Teknisi,%20saya%20ingin%20tanya%20booking%20kode%20${selectedBooking.kode_booking}`}
-                target="_blank"
-                rel="noreferrer"
-                className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors"
-              >
-                <MessageCircle className="w-3.5 h-3.5" />
-                <span>Chat WhatsApp</span>
-              </a>
+            <div className="pt-2 border-t border-slate-100 flex flex-wrap items-center gap-2">
+              {/* WhatsApp Chat button */}
+              {selectedBooking.teknisi_no_hp ? (
+                <a
+                  href={`https://wa.me/${selectedBooking.teknisi_no_hp.replace(/\D/g, "").replace(/^0/, "62")}?text=Halo%20Teknisi,%20saya%20pemesan%20booking%20kode%20${selectedBooking.kode_booking}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors shadow-xs"
+                >
+                  <MessageCircle className="w-3.5 h-3.5" />
+                  <span>Chat Teknisi</span>
+                </a>
+              ) : null}
+
+              {/* Batalkan Pesanan jika status masih menunggu */}
+              {(selectedBooking.status || "").toLowerCase() === "menunggu" && (
+                <button
+                  type="button"
+                  disabled={isCancelling}
+                  onClick={() => handleCancelBooking(selectedBooking.id)}
+                  className="px-3 py-2 bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer disabled:opacity-60"
+                >
+                  <Ban className="w-3.5 h-3.5" />
+                  <span>{isCancelling ? "Membatalkan..." : "Batalkan Booking"}</span>
+                </button>
+              )}
 
               <button
                 type="button"
                 onClick={() => setSelectedBooking(null)}
-                className="px-4 py-2 bg-slate-900 text-white rounded-lg text-xs font-semibold ml-auto"
+                className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-xs font-semibold ml-auto cursor-pointer"
               >
                 Tutup
               </button>

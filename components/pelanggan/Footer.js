@@ -17,7 +17,7 @@ export default function PelangganFooter() {
               </span>
             </div>
             <p className="text-slate-400 leading-relaxed text-[11px]">
-              Platform pemesanan jasa teknisi panggilan terpercaya di area Kota Malang dan sekitarnya. Cepat, transparan, dan bergaransi resmi.
+              Platform pemesanan jasa teknisi panggilan terpercaya di area Kota Makassar dan sekitarnya. Cepat, transparan, dan bergaransi resmi.
             </p>
             <div className="flex items-center gap-1.5 text-emerald-400 text-[11px]">
               <ShieldCheck className="w-4 h-4" />
@@ -47,23 +47,23 @@ export default function PelangganFooter() {
             <ul className="space-y-1.5 text-slate-400 text-[11px]">
               <li className="flex items-center gap-1.5">
                 <MapPin className="w-3.5 h-3.5 text-rose-400 shrink-0" />
-                <span>Kecamatan Klojen, Kota Malang</span>
+                <span>Kecamatan Panakkukang, Kota Makassar</span>
               </li>
               <li className="flex items-center gap-1.5">
                 <MapPin className="w-3.5 h-3.5 text-rose-400 shrink-0" />
-                <span>Kecamatan Lowokwaru, Kota Malang</span>
+                <span>Kecamatan Ujung Pandang, Kota Makassar</span>
               </li>
               <li className="flex items-center gap-1.5">
                 <MapPin className="w-3.5 h-3.5 text-rose-400 shrink-0" />
-                <span>Kecamatan Blimbing, Kota Malang</span>
+                <span>Kecamatan Tamalanrea, Kota Makassar</span>
               </li>
               <li className="flex items-center gap-1.5">
                 <MapPin className="w-3.5 h-3.5 text-rose-400 shrink-0" />
-                <span>Kecamatan Sukun, Kota Malang</span>
+                <span>Kecamatan Rappocini, Kota Makassar</span>
               </li>
               <li className="flex items-center gap-1.5">
                 <MapPin className="w-3.5 h-3.5 text-rose-400 shrink-0" />
-                <span>Kecamatan Kedungkandang, Kota Malang</span>
+                <span>Kecamatan Mariso, Kota Makassar</span>
               </li>
             </ul>
           </div>

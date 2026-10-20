@@ -18,6 +18,8 @@ import {
   MessageCircle,
   Bell,
   Star,
+  Loader2,
+  RefreshCw,
 } from "lucide-react";
 
 export default function TeknisiHomePage() {
@@ -25,279 +27,440 @@ export default function TeknisiHomePage() {
 
   // Teknisi profile state
   const [techInfo, setTechInfo] = useState({
-    nama: "Agus Prasetyo",
-    keahlian: "Teknisi Laptop & Komputer",
-    lokasi: "Kec. Klojen, Malang",
-    rating: 4.9,
+    userId: null,
+    techId: null,
+    nama: "Mitra Teknisi",
+    keahlian: "Teknisi Komputer & Laptop",
+    lokasi: "Kota Makassar",
+    rating: 4.8,
     isOnline: true,
   });
 
-  // State Permintaan Booking Terbaru (extends Permintaan Booking Terbaru)
-  const [pendingRequests, setPendingRequests] = useState([
-    {
-      id: "REQ-2025-011",
-      pelanggan: "Dewi Lestari",
-      noHp: "0856-1122-3344",
-      alamat: "Jl. Veteran No. 45, Kec. Klojen, Malang",
-      layanan: "Ganti Layar LCD / LED Laptop",
-      kategori: "Teknisi Laptop",
-      tanggal: "Hari ini, 15 Mar 2025",
-      jam: "13:30 WIB",
-      biayaTotal: 265000,
-      keluhan: "Layar laptop ASUS 14 inch bergaris ungu vertikal dan berkedip saat digerakkan.",
-      jarakKm: "1.2 km dari lokasi Anda",
-    },
-    {
-      id: "REQ-2025-012",
-      pelanggan: "Bambang Wijaya",
-      noHp: "0821-9876-5432",
-      alamat: "Jl. Cendrawasih No. 8, Kec. Klojen, Malang",
-      layanan: "Pembersihan Thermal Paste & Deep Cleaning PC",
-      kategori: "Teknisi Komputer",
-      tanggal: "Hari ini, 15 Mar 2025",
-      jam: "16:00 WIB",
-      biayaTotal: 90000,
-      keluhan: "PC panas sekali dan kipas berbunyi kasar saat menjalankan aplikasi.",
-      jarakKm: "2.5 km dari lokasi Anda",
-    },
-  ]);
+  const [pendingRequests, setPendingRequests] = useState([]);
+  const [stats, setStats] = useState({
+    baru: 0,
+    aktif: 0,
+    selesai: 0,
+    pendapatan: 0,
+  });
 
+  const [isLoading, setIsLoading] = useState(true);
+  const [isProcessingId, setIsProcessingId] = useState(null);
   const [notification, setNotification] = useState("");
+  const [error, setError] = useState("");
+
+  const fetchData = async () => {
+    setIsLoading(true);
+    setError("");
+
+    let currentTechId = null;
+
+    // 1. Ambil info teknisi dari localStorage
+    try {
+      const raw = localStorage.getItem("technician_auth");
+      if (raw) {
+        const t = JSON.parse(raw);
+        if (t.teknisi?.id) currentTechId = t.teknisi.id;
+        if (t.techId) currentTechId = t.techId;
+        setTechInfo({
+          userId: t.id || null,
+          techId: currentTechId,
+          nama: t.nama || "Mitra Teknisi",
+          keahlian: t.deskripsi || t.keahlian || "Teknisi Komputer & Laptop",
+          lokasi: t.alamat || t.lokasi || "Kota Makassar",
+          rating: t.rating || 4.8,
+          isOnline: t.status_ketersediaan === "tersedia",
+        });
+      }
+    } catch {}
+
+    // 2. Sinkronkan dengan /api/auth/me jika belum dapat techId
+    if (!currentTechId) {
+      try {
+        const meRes = await fetch("/api/auth/me");
+        const meJson = await meRes.json();
+        if (meRes.ok && meJson.success && meJson.data) {
+          const u = meJson.data;
+          currentTechId = u.teknisi?.id || null;
+          setTechInfo({
+            userId: u.id,
+            techId: currentTechId,
+            nama: u.nama,
+            keahlian: u.teknisi?.deskripsi || "Teknisi Komputer & Laptop",
+            lokasi: u.teknisi?.alamat || "Kota Makassar",
+            rating: 4.8,
+            isOnline: u.teknisi?.status_ketersediaan === "tersedia",
+          });
+        }
+      } catch {}
+    }
+
+    // 3. Ambil booking yang menunggu konfirmasi (Permintaan Masuk)
+    try {
+      const [pendingRes, myBookingsRes] = await Promise.all([
+        fetch("/api/booking?status=menunggu"),
+        currentTechId ? fetch(`/api/booking?teknisi_id=${currentTechId}`) : Promise.resolve(null),
+      ]);
+
+      const pendingJson = await pendingRes.json();
+      if (pendingJson.success && Array.isArray(pendingJson.data)) {
+        // Tampilkan pesanan yang ditugaskan ke teknisi ini atau belum ditugaskan (auto)
+        const relevantPending = pendingJson.data.filter(
+          (b) => !b.teknisi_id || String(b.teknisi_id) === String(currentTechId)
+        );
+        setPendingRequests(relevantPending);
+      }
+
+      // 4. Hitung metrik statistik teknisi
+      if (myBookingsRes) {
+        const myJson = await myBookingsRes.json();
+        if (myJson.success && Array.isArray(myJson.data)) {
+          const list = myJson.data;
+          const aktifCount = list.filter((b) =>
+            ["diterima", "diproses"].includes((b.status || "").toLowerCase())
+          ).length;
+          const selesaiList = list.filter(
+            (b) => (b.status || "").toLowerCase() === "selesai"
+          );
+          const totalEarned = selesaiList.reduce(
+            (acc, curr) => acc + (Number(curr.total_harga) || 0),
+            0
+          );
+
+          setStats({
+            baru: pendingRequests.length,
+            aktif: aktifCount,
+            selesai: selesaiList.length,
+            pendapatan: totalEarned,
+          });
+        }
+      }
+    } catch {
+      setError("Gagal memuat data permintaan booking.");
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   useEffect(() => {
-    try {
-      const saved = localStorage.getItem("technician_auth");
-      if (saved) {
-        setTechInfo(JSON.parse(saved));
-      }
-    } catch (e) {
-      console.error(e);
-    }
+    fetchData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Handler Terima Pesanan
-  const handleAcceptRequest = (request) => {
-    // Pindahkan ke booking aktif
-    const acceptedBooking = {
-      ...request,
-      status: "Diproses",
-      teknisi: techInfo.nama,
-      acceptedAt: "Baru saja",
-    };
-
+  const handleAcceptRequest = async (request) => {
+    setIsProcessingId(request.id);
     try {
-      const existing = JSON.parse(localStorage.getItem("technician_active_bookings") || "[]");
-      existing.unshift(acceptedBooking);
-      localStorage.setItem("technician_active_bookings", JSON.stringify(existing));
-    } catch (e) {
-      console.error(e);
-    }
+      const res = await fetch(`/api/booking/${request.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          status: "diproses",
+          teknisi_id: techInfo.techId || undefined,
+          catatan: `Pesanan diterima oleh teknisi ${techInfo.nama}. Sedang menuju pengerjaan.`,
+        }),
+      });
 
-    setPendingRequests(pendingRequests.filter((r) => r.id !== request.id));
-    setNotification(`Pesanan ${request.id} berhasil diterima! Segera hubungi pelanggan.`);
-    setTimeout(() => setNotification(""), 4000);
+      const json = await res.json();
+      if (res.ok && json.success) {
+        setPendingRequests((prev) => prev.filter((r) => r.id !== request.id));
+        setStats((prev) => ({ ...prev, aktif: prev.aktif + 1 }));
+        setNotification(`Pesanan ${request.kode_booking} berhasil diterima! Mengarahkan ke Booking Aktif...`);
+        setTimeout(() => {
+          setNotification("");
+          router.push("/teknisi/booking");
+        }, 1500);
+      } else {
+        alert(json.message || "Gagal menerima pesanan.");
+      }
+    } catch {
+      alert("Gagal menghubungkan ke server.");
+    } finally {
+      setIsProcessingId(null);
+    }
   };
 
   // Handler Tolak Pesanan
-  const handleRejectRequest = (requestId) => {
-    if (confirm("Apakah Anda yakin ingin menolak permintaan pesanan ini?")) {
-      setPendingRequests(pendingRequests.filter((r) => r.id !== requestId));
-      setNotification(`Pesanan ${requestId} telah ditolak dan akan dialihkan.`);
-      setTimeout(() => setNotification(""), 3000);
+  const handleRejectRequest = async (request) => {
+    if (!confirm(`Apakah Anda yakin ingin menolak pesanan ${request.kode_booking}?`)) return;
+
+    setIsProcessingId(request.id);
+    try {
+      const res = await fetch(`/api/booking/${request.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          status: "dibatalkan",
+          catatan: `Ditolak oleh teknisi ${techInfo.nama}`,
+        }),
+      });
+
+      const json = await res.json();
+      if (res.ok && json.success) {
+        setPendingRequests((prev) => prev.filter((r) => r.id !== request.id));
+        setNotification(`Pesanan ${request.kode_booking} telah ditolak.`);
+        setTimeout(() => setNotification(""), 3500);
+      } else {
+        alert(json.message || "Gagal menolak pesanan.");
+      }
+    } catch {
+      alert("Gagal menghubungkan ke server.");
+    } finally {
+      setIsProcessingId(null);
     }
   };
 
   return (
     <div className="space-y-6">
-        
-        {/* Banner Notifikasi Aksi */}
-        {notification && (
-          <div className="p-3.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs flex items-center gap-2.5 animate-in fade-in">
-            <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-            <span className="font-medium">{notification}</span>
+      {/* Welcome Banner */}
+      <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div>
+          <div className="flex items-center gap-2 mb-1">
+            <h2 className="text-xl font-bold text-slate-900">
+              Selamat Datang, {techInfo.nama}
+            </h2>
+            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-semibold bg-blue-50 text-blue-700 border border-blue-200">
+              <span className={`w-1.5 h-1.5 rounded-full ${techInfo.isOnline ? "bg-emerald-500 animate-pulse" : "bg-slate-400"}`}></span>
+              {techInfo.isOnline ? "Siap Melayani" : "Istirahat"}
+            </span>
           </div>
-        )}
-
-        {/* Top Card: Status Teknisi & Lokasi (extends Lokasi) */}
-        <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <div className="flex items-center gap-3.5">
-            <div className="w-12 h-12 rounded-xl bg-slate-900 text-white flex items-center justify-center font-bold text-base shrink-0">
-              {techInfo.nama?.slice(0, 2).toUpperCase() || "AG"}
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h1 className="text-base font-bold text-slate-900">
-                  Selamat Bekerja, {techInfo.nama}
-                </h1>
-                <span className="inline-flex items-center text-xs font-bold text-amber-600 bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
-                  <Star className="w-3 h-3 fill-amber-500 text-amber-500 mr-0.5" />
-                  {techInfo.rating || 4.9}
-                </span>
-              </div>
-              <div className="flex flex-wrap items-center gap-3 text-xs text-slate-500 mt-1">
-                <span className="text-blue-600 font-medium">{techInfo.keahlian}</span>
-                <span>•</span>
-                {/* Extends Lokasi */}
-                <span className="flex items-center gap-1 text-slate-700">
-                  <MapPin className="w-3.5 h-3.5 text-rose-500" />
-                  Standby di: <strong>{techInfo.lokasi}</strong>
-                </span>
-              </div>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2 sm:self-center">
-            <Link
-              href="/teknisi/booking"
-              className="px-3.5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-semibold shadow-xs flex items-center gap-1.5 transition-colors"
-            >
-              <CalendarCheck className="w-3.5 h-3.5" />
-              <span>Buka Booking Aktif</span>
-            </Link>
-          </div>
+          <p className="text-xs text-slate-500 max-w-xl">
+            {techInfo.keahlian} • Area Operasional: <strong className="text-slate-700">{techInfo.lokasi}</strong>
+          </p>
         </div>
 
-        {/* 4 Kartu Statistik Performa Kerja */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 text-xs">
-          <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-xs">
-            <span className="text-[11px] text-slate-400 block">Permintaan Baru</span>
-            <span className="text-xl sm:text-2xl font-bold text-slate-900 mt-1 block">
-              {pendingRequests.length}
-            </span>
-            <span className="text-[10px] text-amber-600 font-medium">Perlu konfirmasi</span>
-          </div>
-
-          <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-xs">
-            <span className="text-[11px] text-slate-400 block">Booking Dikerjakan</span>
-            <span className="text-xl sm:text-2xl font-bold text-blue-600 mt-1 block">
-              1
-            </span>
-            <span className="text-[10px] text-slate-500">Kunjungan lapangan</span>
-          </div>
-
-          <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-xs">
-            <span className="text-[11px] text-slate-400 block">Servis Selesai</span>
-            <span className="text-xl sm:text-2xl font-bold text-slate-900 mt-1 block">
-              38
-            </span>
-            <span className="text-[10px] text-emerald-600 font-medium">Rating rata-rata 4.9</span>
-          </div>
-
-          <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-xs">
-            <span className="text-[11px] text-slate-400 block">Estimasi Penghasilan</span>
-            <span className="text-base sm:text-lg font-bold text-emerald-600 mt-1 block truncate">
-              Rp 2.450.000
-            </span>
-            <span className="text-[10px] text-slate-500">Bulan ini</span>
-          </div>
+        <div className="flex items-center gap-2 shrink-0">
+          <button
+            type="button"
+            onClick={fetchData}
+            disabled={isLoading}
+            className="px-3 py-2 bg-white hover:bg-slate-50 text-slate-700 rounded-lg text-xs font-medium transition-colors flex items-center gap-1.5 border border-slate-200 cursor-pointer shadow-xs"
+            title="Muat Ulang Data"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? "animate-spin" : ""}`} />
+            <span>Refresh</span>
+          </button>
+          <Link
+            href="/teknisi/booking"
+            className="px-3.5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-semibold shadow-xs flex items-center justify-center gap-2 transition-colors shrink-0"
+          >
+            <CalendarCheck className="w-4 h-4" />
+            <span>Booking Aktif</span>
+          </Link>
         </div>
+      </div>
 
-        {/* SECTION: PERMINTAAN BOOKING TERBARU (extends Permintaan Booking Terbaru) */}
-        <div className="space-y-4">
+      {/* Notifikasi Toast Banner */}
+      {notification && (
+        <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-xl flex items-center gap-3 text-emerald-800 text-xs animate-in fade-in">
+          <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+          <span className="font-semibold">{notification}</span>
+        </div>
+      )}
+
+      {/* Error Banner */}
+      {error && (
+        <div className="p-4 bg-rose-50 border border-rose-200 rounded-xl flex items-center gap-2 text-rose-700 text-xs">
+          <AlertCircle className="w-4 h-4 shrink-0" />
+          <span>{error}</span>
+        </div>
+      )}
+
+      {/* 4 Kartu Metrik Kerja */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-xs transition-shadow hover:shadow-sm">
           <div className="flex items-center justify-between">
             <div>
-              <h2 className="text-base font-bold text-slate-900 flex items-center gap-2">
-                <span>Permintaan Booking Terbaru Masuk</span>
-                <span className="px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 text-[10px] font-bold">
-                  {pendingRequests.length} Baru
-                </span>
-              </h2>
-              <p className="text-xs text-slate-500 mt-0.5">
-                Pelanggan di area Anda membutuhkan teknisi. Terima atau tolak pesanan sesuai ketersediaan Anda.
+              <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">
+                Permintaan Baru
               </p>
+              <h3 className="text-2xl font-bold text-slate-900 mt-1">
+                {isLoading ? "—" : pendingRequests.length}
+              </h3>
+              <p className="text-xs text-amber-600 font-medium mt-1">Perlu Dikonfirmasi</p>
+            </div>
+            <div className="w-10 h-10 rounded-lg bg-amber-50 flex items-center justify-center text-amber-600 border border-amber-100">
+              <Clock className="w-5 h-5" />
             </div>
           </div>
-
-          {pendingRequests.length === 0 ? (
-            <div className="bg-white border border-slate-200 rounded-xl p-8 text-center">
-              <CheckCircle2 className="w-8 h-8 text-emerald-500 mx-auto mb-2" />
-              <h3 className="text-sm font-bold text-slate-900">
-                Tidak Ada Permintaan Menunggu
-              </h3>
-              <p className="text-xs text-slate-500 mt-1">
-                Semua pesanan telah Anda tindak lanjuti. Tetap aktifkan status Online agar pelanggan baru dapat memesan.
-              </p>
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {pendingRequests.map((req) => (
-                <div
-                  key={req.id}
-                  className="bg-white border border-slate-200 rounded-xl p-5 shadow-xs space-y-4 flex flex-col justify-between"
-                >
-                  <div className="space-y-3">
-                    <div className="flex items-center justify-between">
-                      <span className="font-mono text-xs font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded border border-blue-100">
-                        {req.id}
-                      </span>
-                      <span className="text-[11px] text-emerald-600 font-semibold flex items-center gap-1">
-                        <MapPin className="w-3 h-3 text-rose-500" />
-                        {req.jarakKm}
-                      </span>
-                    </div>
-
-                    <div>
-                      <h3 className="text-sm font-bold text-slate-900">
-                        {req.layanan}
-                      </h3>
-                      <p className="text-xs text-slate-500 mt-0.5">
-                        Kategori: <strong className="text-slate-700">{req.kategori}</strong>
-                      </p>
-                    </div>
-
-                    <div className="p-3 bg-slate-50 rounded-lg border border-slate-100 text-xs space-y-1.5">
-                      <div className="flex items-center gap-2 text-slate-700">
-                        <User className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                        <span>Pelanggan: <strong>{req.pelanggan}</strong></span>
-                      </div>
-                      <div className="flex items-center gap-2 text-slate-700">
-                        <MapPin className="w-3.5 h-3.5 text-rose-500 shrink-0" />
-                        <span className="truncate">{req.alamat}</span>
-                      </div>
-                      <div className="flex items-center gap-2 text-slate-700">
-                        <Clock className="w-3.5 h-3.5 text-blue-600 shrink-0" />
-                        <span>Waktu Kunjungan: <strong>{req.tanggal} ({req.jam})</strong></span>
-                      </div>
-                      <div className="pt-1 border-t border-slate-200/60 text-slate-600 italic text-[11px]">
-                        &ldquo;{req.keluhan}&rdquo;
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Biaya & Tombol Aksi Terima/Tolak */}
-                  <div className="pt-3 border-t border-slate-100 flex items-center justify-between gap-3">
-                    <div>
-                      <span className="text-[10px] text-slate-400 block">Total Tarif</span>
-                      <span className="text-sm font-extrabold text-slate-900">
-                        Rp {req.biayaTotal.toLocaleString("id-ID")}
-                      </span>
-                    </div>
-
-                    <div className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={() => handleRejectRequest(req.id)}
-                        className="px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-lg text-xs font-semibold transition-colors cursor-pointer"
-                      >
-                        Tolak
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => handleAcceptRequest(req)}
-                        className="px-4 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-semibold shadow-xs transition-colors flex items-center gap-1.5 cursor-pointer"
-                      >
-                        <CheckCircle2 className="w-3.5 h-3.5" />
-                        <span>Terima Pesanan</span>
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
         </div>
 
+        <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-xs transition-shadow hover:shadow-sm">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">
+                Booking Aktif
+              </p>
+              <h3 className="text-2xl font-bold text-slate-900 mt-1">
+                {isLoading ? "—" : stats.aktif}
+              </h3>
+              <p className="text-xs text-blue-600 font-medium mt-1">Tahap Pengerjaan</p>
+            </div>
+            <div className="w-10 h-10 rounded-lg bg-blue-50 flex items-center justify-center text-blue-600 border border-blue-100">
+              <CalendarCheck className="w-5 h-5" />
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-xs transition-shadow hover:shadow-sm">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">
+                Servis Selesai
+              </p>
+              <h3 className="text-2xl font-bold text-slate-900 mt-1">
+                {isLoading ? "—" : stats.selesai}
+              </h3>
+              <p className="text-xs text-emerald-600 font-medium mt-1">Total Berhasil</p>
+            </div>
+            <div className="w-10 h-10 rounded-lg bg-emerald-50 flex items-center justify-center text-emerald-600 border border-emerald-100">
+              <CheckCircle2 className="w-5 h-5" />
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-xs transition-shadow hover:shadow-sm">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">
+                Estimasi Pendapatan
+              </p>
+              <h3 className="text-2xl font-bold text-slate-900 mt-1 truncate">
+                {isLoading ? "—" : `Rp ${stats.pendapatan.toLocaleString("id-ID")}`}
+              </h3>
+              <p className="text-xs text-slate-400 mt-1">Servis Selesai</p>
+            </div>
+            <div className="w-10 h-10 rounded-lg bg-indigo-50 flex items-center justify-center text-indigo-600 border border-indigo-100">
+              <TrendingUp className="w-5 h-5" />
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Permintaan Booking Masuk (Pending Requests) */}
+      <div className="space-y-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
+              <span>Permintaan Servis Masuk</span>
+              <span className="px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 text-[11px] font-bold">
+                {pendingRequests.length} Menunggu
+              </span>
+            </h3>
+            <p className="text-xs text-slate-500 mt-0.5">
+              Pesanan pelanggan di sekitar Anda yang siap diambil dan dikerjakan.
+            </p>
+          </div>
+        </div>
+
+        {isLoading ? (
+          <div className="bg-white border border-slate-200 rounded-xl p-8 text-center text-xs text-slate-400">
+            <Loader2 className="w-6 h-6 animate-spin text-blue-600 mx-auto mb-2" />
+            <span>Memuat data permintaan booking...</span>
+          </div>
+        ) : pendingRequests.length === 0 ? (
+          <div className="bg-white border border-slate-200 rounded-xl p-8 text-center text-xs">
+            <CheckCircle2 className="w-8 h-8 text-emerald-500 mx-auto mb-2" />
+            <p className="font-bold text-slate-800">Semua Permintaan Telah Ditangani!</p>
+            <p className="text-slate-400 mt-1">
+              Saat ini tidak ada pesanan baru yang menunggu konfirmasi.
+            </p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {pendingRequests.map((req) => (
+              <div
+                key={req.id}
+                className="bg-white border border-slate-200 rounded-xl p-5 shadow-xs flex flex-col justify-between space-y-4 hover:border-blue-300 transition-colors"
+              >
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+                    <span className="font-mono font-bold text-slate-900 bg-slate-100 px-2 py-0.5 rounded text-xs">
+                      {req.kode_booking}
+                    </span>
+                    <span className="text-[11px] font-bold text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded">
+                      Menunggu Konfirmasi
+                    </span>
+                  </div>
+
+                  <div>
+                    <span className="text-[10px] font-semibold text-blue-600 uppercase tracking-wider block">
+                      {req.nama_kategori || "Layanan Jasa"}
+                    </span>
+                    <h4 className="text-sm font-bold text-slate-900">{req.nama_layanan}</h4>
+                  </div>
+
+                  <div className="space-y-1.5 text-xs text-slate-600 bg-slate-50 p-3 rounded-lg border border-slate-100">
+                    <div className="flex items-center gap-2">
+                      <User className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                      <span className="font-semibold text-slate-800">{req.pelanggan_nama}</span>
+                      <span className="text-slate-400 font-mono text-[11px]">({req.pelanggan_no_hp})</span>
+                    </div>
+
+                    <div className="flex items-start gap-2">
+                      <MapPin className="w-3.5 h-3.5 text-rose-500 shrink-0 mt-0.5" />
+                      <span className="line-clamp-2">{req.alamat}</span>
+                    </div>
+
+                    <div className="flex items-center gap-2 pt-1 border-t border-slate-200/60 text-[11px]">
+                      <Clock className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+                      <span>
+                        Jadwal: <strong>{new Date(req.tanggal_booking).toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric" })}</strong> • Jam: <strong>{req.waktu_booking}</strong>
+                      </span>
+                    </div>
+                  </div>
+
+                  {req.keluhan && (
+                    <div className="p-2.5 bg-white border border-slate-200 rounded-lg text-xs">
+                      <span className="text-[10px] font-bold text-slate-400 block mb-0.5">Keluhan Kerusakan:</span>
+                      <p className="text-slate-700 italic">&ldquo;{req.keluhan}&rdquo;</p>
+                    </div>
+                  )}
+                </div>
+
+                <div className="pt-3 border-t border-slate-100 flex items-center justify-between">
+                  <div>
+                    <span className="text-[10px] text-slate-400 block">Biaya Jasa</span>
+                    <span className="text-base font-extrabold text-blue-600">
+                      Rp {Number(req.total_harga || 0).toLocaleString("id-ID")}
+                    </span>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      disabled={isProcessingId === req.id}
+                      onClick={() => handleRejectRequest(req)}
+                      className="px-3 py-1.5 bg-slate-100 hover:bg-rose-50 text-slate-600 hover:text-rose-600 border border-slate-200 rounded-lg text-xs font-semibold transition-colors cursor-pointer disabled:opacity-50"
+                    >
+                      Tolak
+                    </button>
+
+                    <button
+                      type="button"
+                      disabled={isProcessingId === req.id}
+                      onClick={() => handleAcceptRequest(req)}
+                      className="px-4 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-semibold shadow-xs flex items-center gap-1.5 transition-colors cursor-pointer disabled:opacity-50"
+                    >
+                      {isProcessingId === req.id ? (
+                        <>
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          <span>Menerima...</span>
+                        </>
+                      ) : (
+                        <>
+                          <CheckCircle2 className="w-3.5 h-3.5" />
+                          <span>Terima Pesanan</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

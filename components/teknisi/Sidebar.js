@@ -14,6 +14,7 @@ import {
   ShieldCheck,
   Star,
   Power,
+  Loader2,
 } from "lucide-react";
 
 const navigationItems = [
@@ -27,39 +28,91 @@ export default function TeknisiSidebar({ isOpen, onClose }) {
   const pathname = usePathname();
   const router = useRouter();
 
-  const [isOnline, setIsOnline] = useState(true);
+  const [tech, setTech] = useState({
+    id: null,
+    techId: null,
+    nama: "Mitra Teknisi",
+    initials: "TK",
+    rating: 4.9,
+    statusKetersediaan: "tersedia",
+  });
+
+  const [isToggling, setIsToggling] = useState(false);
 
   useEffect(() => {
-    try {
-      const saved = localStorage.getItem("technician_auth");
-      if (saved) {
-        const t = JSON.parse(saved);
-        if (t.isOnline !== undefined) setIsOnline(t.isOnline);
+    const loadTech = () => {
+      try {
+        const saved = localStorage.getItem("technician_auth");
+        if (saved) {
+          const t = JSON.parse(saved);
+          const name = t.nama || "Mitra Teknisi";
+          const words = name.trim().split(" ").filter(Boolean);
+          const initials =
+            words.length > 1
+              ? (words[0][0] + words[1][0]).toUpperCase()
+              : name.slice(0, 2).toUpperCase();
+
+          setTech({
+            id: t.id || null,
+            techId: t.teknisi?.id || t.techId || null,
+            nama: name,
+            initials: initials || "TK",
+            rating: t.rating || 4.9,
+            statusKetersediaan: t.status_ketersediaan || t.teknisi?.status_ketersediaan || "tersedia",
+          });
+        }
+      } catch (e) {
+        console.error(e);
       }
-    } catch (e) {
-      console.error(e);
-    }
+    };
+
+    loadTech();
+    window.addEventListener("storage", loadTech);
+    return () => window.removeEventListener("storage", loadTech);
   }, []);
 
-  const toggleOnline = () => {
-    const nextVal = !isOnline;
-    setIsOnline(nextVal);
+  const isOnline = tech.statusKetersediaan === "tersedia";
+
+  const toggleOnline = async () => {
+    const nextAvailability = isOnline ? "tidak_tersedia" : "tersedia";
+    setIsToggling(true);
+
     try {
+      if (tech.techId) {
+        await fetch(`/api/teknisi/${tech.techId}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ status_ketersediaan: nextAvailability }),
+        });
+      }
+
+      const updated = {
+        ...tech,
+        statusKetersediaan: nextAvailability,
+      };
+      setTech(updated);
+
       const saved = JSON.parse(localStorage.getItem("technician_auth") || "{}");
-      localStorage.setItem("technician_auth", JSON.stringify({ ...saved, isOnline: nextVal }));
+      localStorage.setItem(
+        "technician_auth",
+        JSON.stringify({ ...saved, status_ketersediaan: nextAvailability })
+      );
+      window.dispatchEvent(new Event("storage"));
     } catch (e) {
-      console.error(e);
+      console.error("Gagal toggle status online:", e);
+    } finally {
+      setIsToggling(false);
     }
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
     if (confirm("Apakah Anda yakin ingin keluar dari akun mitra teknisi?")) {
       try {
+        await fetch("/api/auth/logout", { method: "POST" });
         localStorage.removeItem("technician_auth");
       } catch (e) {
         console.error(e);
       }
-      alert("Anda telah berhasil keluar.");
       router.push("/teknisi/login");
     }
   };
@@ -88,7 +141,7 @@ export default function TeknisiSidebar({ isOpen, onClose }) {
               className="flex items-center gap-2.5 font-bold text-slate-900 hover:opacity-90 transition-opacity"
               onClick={onClose}
             >
-              <div className="w-8 h-8 rounded-lg bg-slate-900 flex items-center justify-center text-white shadow-xs">
+              <div className="w-8 h-8 rounded-lg bg-blue-600 flex items-center justify-center text-white shadow-xs">
                 <Wrench className="w-4 h-4" />
               </div>
               <div className="flex flex-col">
@@ -96,12 +149,11 @@ export default function TeknisiSidebar({ isOpen, onClose }) {
                   Booking Teknisi
                 </span>
                 <span className="text-[10px] font-medium text-blue-600 tracking-wider uppercase">
-                  Mitra Teknisi
+                  Portal Teknisi
                 </span>
               </div>
             </Link>
 
-            {/* Mobile close button */}
             <button
               type="button"
               onClick={onClose}
@@ -111,27 +163,36 @@ export default function TeknisiSidebar({ isOpen, onClose }) {
             </button>
           </div>
 
-          {/* Status Kerja Switcher */}
-          <div className="p-3 pb-1">
-            <button
-              type="button"
-              onClick={toggleOnline}
-              className={`w-full p-2.5 rounded-xl border text-xs font-semibold flex items-center justify-between transition-colors cursor-pointer ${
-                isOnline
-                  ? "bg-emerald-50 border-emerald-200 text-emerald-800"
-                  : "bg-slate-100 border-slate-200 text-slate-600"
-              }`}
-            >
-              <div className="flex items-center gap-2">
-                <span
-                  className={`w-2.5 h-2.5 rounded-full ${
-                    isOnline ? "bg-emerald-500 animate-pulse" : "bg-slate-400"
-                  }`}
-                />
-                <span>{isOnline ? "Status: Online Siaga" : "Status: Offline"}</span>
+          {/* Toggle Online/Offline Ketersediaan Kerja */}
+          <div className="p-3 mx-3 my-3 bg-slate-50 border border-slate-200/80 rounded-xl">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-xs font-bold text-slate-900">
+                  {isOnline ? "Siaga Kunjungan" : "Sedang Istirahat"}
+                </p>
+                <p className="text-[10px] text-slate-500">
+                  {isOnline ? "Siap terima pesanan" : "Tidak menerima order"}
+                </p>
               </div>
-              <Power className="w-3.5 h-3.5" />
-            </button>
+
+              <button
+                type="button"
+                onClick={toggleOnline}
+                disabled={isToggling}
+                className={`p-1.5 rounded-lg border transition-colors flex items-center gap-1 cursor-pointer disabled:opacity-50 ${
+                  isOnline
+                    ? "bg-emerald-600 border-emerald-600 text-white shadow-xs"
+                    : "bg-slate-200 border-slate-300 text-slate-600"
+                }`}
+                title="Ubah status ketersediaan kerja"
+              >
+                {isToggling ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <Power className="w-3.5 h-3.5" />
+                )}
+              </button>
+            </div>
           </div>
 
           {/* Navigation Links */}
@@ -150,7 +211,7 @@ export default function TeknisiSidebar({ isOpen, onClose }) {
                   onClick={onClose}
                   className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-xs font-medium transition-colors ${
                     isActive
-                      ? "bg-blue-50 text-blue-600 font-semibold border-l-3 border-blue-600"
+                      ? "bg-blue-50 text-blue-700 font-semibold"
                       : "text-slate-600 hover:text-slate-900 hover:bg-slate-50"
                   }`}
                 >
@@ -169,17 +230,17 @@ export default function TeknisiSidebar({ isOpen, onClose }) {
         {/* Bottom Section: Technician Info & Logout */}
         <div className="p-3 border-t border-slate-100 bg-slate-50/50">
           <div className="flex items-center gap-3 p-2 rounded-lg bg-white border border-slate-200/80 mb-2">
-            <div className="w-8 h-8 rounded-full bg-slate-900 text-white flex items-center justify-center text-xs font-semibold shrink-0">
-              AG
+            <div className="w-8 h-8 rounded-full bg-blue-600 text-white flex items-center justify-center text-xs font-semibold shrink-0 shadow-xs">
+              {tech.initials}
             </div>
             <div className="overflow-hidden">
               <div className="flex items-center gap-1">
                 <p className="text-xs font-semibold text-slate-900 truncate">
-                  Agus Prasetyo
+                  {tech.nama}
                 </p>
                 <span className="text-[10px] font-bold text-amber-600 flex items-center shrink-0">
                   <Star className="w-2.5 h-2.5 fill-amber-500 text-amber-500 mr-0.5" />
-                  4.9
+                  {tech.rating}
                 </span>
               </div>
               <p className="text-[10px] text-slate-500 truncate flex items-center gap-1">
@@ -192,7 +253,7 @@ export default function TeknisiSidebar({ isOpen, onClose }) {
           <button
             type="button"
             onClick={handleLogout}
-            className="w-full flex items-center justify-center gap-2 px-3 py-2 text-xs font-medium text-rose-600 hover:text-rose-700 hover:bg-rose-50 rounded-lg border border-transparent hover:border-rose-200 transition-colors"
+            className="w-full flex items-center justify-center gap-2 px-3 py-2 text-xs font-medium text-rose-600 hover:text-rose-700 hover:bg-rose-50 rounded-lg border border-transparent hover:border-rose-200 transition-colors cursor-pointer"
           >
             <LogOut className="w-3.5 h-3.5" />
             <span>Keluar (Logout)</span>

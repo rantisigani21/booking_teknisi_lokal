@@ -32,8 +32,8 @@ export default function AdminLoginPage() {
 
   // Quick fill helper for demo/testing
   const handleUseDemo = () => {
-    setEmail("admin@bookingteknisi.id");
-    setPassword("admin123 ");
+    setEmail("admin@bookingteknisi.local");
+    setPassword("admin123");
     setErrorMessage("");
   };
 

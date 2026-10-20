@@ -54,16 +54,37 @@ function CustomerBookingForm() {
 
   // Load data dari API dan session
   useEffect(() => {
-    // Ambil info user dari localStorage
-    try {
-      const raw = localStorage.getItem("customer_auth");
-      if (raw) {
-        const u = JSON.parse(raw);
-        if (u.id) setPelangganId(u.id);
-        if (u.nama) setCustomerName(u.nama);
-        if (u.no_hp) setCustomerPhone(u.no_hp);
+    // Ambil info user dari localStorage atau /api/auth/me
+    const loadCustomer = async () => {
+      let found = false;
+      try {
+        const raw = localStorage.getItem("customer_auth");
+        if (raw) {
+          const u = JSON.parse(raw);
+          if (u.id) setPelangganId(u.id);
+          if (u.nama) setCustomerName(u.nama);
+          if (u.no_hp || u.noHp) setCustomerPhone(u.no_hp || u.noHp);
+          if (u.alamat) setCustomerAddress(u.alamat);
+          found = true;
+        }
+      } catch {}
+
+      if (!found) {
+        try {
+          const meRes = await fetch("/api/auth/me");
+          const meJson = await meRes.json();
+          if (meRes.ok && meJson.success && meJson.data) {
+            const u = meJson.data;
+            if (u.id) setPelangganId(u.id);
+            if (u.nama) setCustomerName(u.nama);
+            if (u.no_hp) setCustomerPhone(u.no_hp);
+            if (u.alamat) setCustomerAddress(u.alamat);
+          }
+        } catch {}
       }
-    } catch {}
+    };
+
+    loadCustomer();
 
     const fetchData = async () => {
       setIsLoadingData(true);
@@ -192,7 +213,7 @@ function CustomerBookingForm() {
       <div>
         <h2 className="text-xl font-bold text-slate-900">Form Booking Teknisi Panggilan</h2>
         <p className="text-xs text-slate-500 mt-1">
-          Lengkapi formulir di bawah ini untuk memesan kedatangan teknisi ke lokasi Anda di Kota Malang.
+          Lengkapi formulir di bawah ini untuk memesan kedatangan teknisi ke lokasi Anda di Kota Makassar.
         </p>
       </div>
 
@@ -266,7 +287,16 @@ function CustomerBookingForm() {
             </h3>
 
             <div>
-              <label className="block text-xs font-medium text-slate-700 mb-1">Pilihan Teknisi</label>
+              <div className="flex items-center justify-between mb-1">
+                <label className="block text-xs font-medium text-slate-700">Pilihan Teknisi</label>
+                <Link
+                  href="/pelanggan/peta-teknisi"
+                  className="text-xs font-semibold text-blue-600 hover:text-blue-700 flex items-center gap-1 hover:underline"
+                >
+                  <MapPin className="w-3.5 h-3.5 text-rose-500" />
+                  <span>Lihat di Peta &rarr;</span>
+                </Link>
+              </div>
               <select
                 value={selectedTechId}
                 onChange={(e) => setSelectedTechId(e.target.value)}
@@ -367,7 +397,7 @@ function CustomerBookingForm() {
                 rows={2}
                 value={customerAddress}
                 onChange={(e) => setCustomerAddress(e.target.value)}
-                placeholder="Jl. Contoh No. 1, Kec. Klojen, Kota Malang"
+                placeholder="Jl. Contoh No. 1, Kec. Panakkukang, Kota Makassar"
                 className="w-full p-2.5 text-xs border border-slate-300 rounded-lg focus:outline-hidden focus:border-blue-600 text-slate-800"
               />
             </div>

@@ -44,29 +44,40 @@ export default function PelangganLoginPage() {
     setErrorMessage("");
   };
 
-  const handleLoginSubmit = (e) => {
+  const handleLoginSubmit = async (e) => {
     e.preventDefault();
     setErrorMessage("");
     setSuccessMessage("");
 
     if (!loginEmail.trim() || !loginPassword) {
-      setErrorMessage("Silakan masukkan email / no HP dan kata sandi.");
+      setErrorMessage("Silakan masukkan email dan kata sandi.");
       return;
     }
 
     setIsLoading(true);
 
-    setTimeout(() => {
-      const customerData = {
-        nama: loginEmail.includes("siti") ? "Siti Rahmawati" : "Pelanggan Terdaftar",
-        email: loginEmail,
-        noHp: "0812-3456-7890",
-        alamat: "Jl. Melati No. 14, Lowokwaru, Kota Malang",
-        role: "Pelanggan Terdaftar",
-      };
+    try {
+      const res = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: loginEmail,
+          password: loginPassword,
+          role: "pelanggan",
+        }),
+      });
 
+      const json = await res.json();
+
+      if (!res.ok || !json.success) {
+        setErrorMessage(json.message || "Email atau kata sandi tidak sesuai.");
+        setIsLoading(false);
+        return;
+      }
+
+      const userData = json.data;
       try {
-        localStorage.setItem("customer_auth", JSON.stringify(customerData));
+        localStorage.setItem("customer_auth", JSON.stringify(userData));
       } catch (err) {
         console.error(err);
       }
@@ -74,11 +85,14 @@ export default function PelangganLoginPage() {
       setSuccessMessage("Login berhasil! Mengarahkan ke dashboard...");
       setTimeout(() => {
         router.push("/pelanggan");
-      }, 700);
-    }, 600);
+      }, 600);
+    } catch {
+      setErrorMessage("Terjadi kesalahan koneksi ke server. Pastikan server aktif.");
+      setIsLoading(false);
+    }
   };
 
-  const handleRegisterSubmit = (e) => {
+  const handleRegisterSubmit = async (e) => {
     e.preventDefault();
     setErrorMessage("");
     setSuccessMessage("");
@@ -100,26 +114,42 @@ export default function PelangganLoginPage() {
 
     setIsLoading(true);
 
-    setTimeout(() => {
-      const newCustomer = {
-        nama: regName,
-        email: regEmail,
-        noHp: regPhone,
-        alamat: regAddress,
-        role: "Pelanggan Terdaftar",
-      };
+    try {
+      const res = await fetch("/api/auth/register", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          nama: regName,
+          email: regEmail,
+          password: regPassword,
+          no_hp: regPhone,
+          alamat: regAddress,
+          role: "pelanggan",
+        }),
+      });
 
-      try {
-        localStorage.setItem("customer_auth", JSON.stringify(newCustomer));
-      } catch (err) {
-        console.error(err);
+      const json = await res.json();
+
+      if (!res.ok || !json.success) {
+        setErrorMessage(json.message || "Pendaftaran gagal. Periksa data Anda.");
+        setIsLoading(false);
+        return;
       }
 
-      setSuccessMessage("Pendaftaran akun berhasil! Mengarahkan ke dashboard...");
-      setTimeout(() => {
-        router.push("/pelanggan");
-      }, 800);
-    }, 700);
+      // Pendaftaran berhasil: Arahkan ke form login (bukan langsung masuk ke dashboard)
+      setIsLoading(false);
+      setLoginEmail(regEmail.trim());
+      setLoginPassword("");
+      setRegPassword("");
+      setRegConfirmPassword("");
+      setActiveTab("login");
+      setSuccessMessage(
+        "Pendaftaran akun berhasil! Silakan masuk menggunakan email dan kata sandi yang telah Anda daftarkan."
+      );
+    } catch {
+      setErrorMessage("Gagal menghubungkan ke server saat pendaftaran.");
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -275,18 +305,35 @@ export default function PelangganLoginPage() {
               </div>
 
               {/* Demo Helper */}
-              <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between text-xs text-slate-600 bg-slate-50 -mx-5 -mb-6 px-5 py-3 rounded-b-xl">
+              <div className="mt-4 pt-3 border-t border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs text-slate-600 bg-slate-50 -mx-5 -mb-6 px-5 py-3 rounded-b-xl">
                 <div>
-                  <p className="font-medium text-slate-800">Akun Pelanggan Contoh:</p>
-                  <p className="text-[11px] text-slate-500">siti.rahma@gmail.com / pelanggan123</p>
+                  <p className="font-medium text-slate-800">Akun Pelanggan Demo:</p>
+                  <p className="text-[11px] text-slate-500">Pilih salah satu untuk coba instan</p>
                 </div>
-                <button
-                  type="button"
-                  onClick={handleUseDemo}
-                  className="text-xs font-semibold text-blue-600 hover:text-blue-700 bg-white border border-slate-200 px-2.5 py-1.5 rounded-md hover:bg-slate-50"
-                >
-                  Isi Contoh
-                </button>
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setLoginEmail("siti.rahma@gmail.com");
+                      setLoginPassword("pelanggan123");
+                      setErrorMessage("");
+                    }}
+                    className="text-[11px] font-semibold text-blue-600 hover:text-blue-700 bg-white border border-slate-200 px-2.5 py-1.5 rounded-md hover:bg-slate-50 cursor-pointer"
+                  >
+                    Siti (Baru)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setLoginEmail("budi@example.com");
+                      setLoginPassword("123456");
+                      setErrorMessage("");
+                    }}
+                    className="text-[11px] font-semibold text-indigo-600 hover:text-indigo-700 bg-white border border-slate-200 px-2.5 py-1.5 rounded-md hover:bg-slate-50 cursor-pointer"
+                  >
+                    Budi (Ada Riwayat)
+                  </button>
+                </div>
               </div>
             </form>
           ) : (
@@ -349,7 +396,7 @@ export default function PelangganLoginPage() {
                     rows={2}
                     value={regAddress}
                     onChange={(e) => setRegAddress(e.target.value)}
-                    placeholder="Jl. Melati No. 14, Lowokwaru, Malang"
+                    placeholder="Jl. Somba Opu No. 14, Ujung Pandang, Makassar"
                     className="w-full pl-9 pr-3 py-2 text-xs text-slate-900 border border-slate-300 rounded-lg focus:outline-hidden focus:border-blue-600"
                   />
                 </div>

@@ -8,6 +8,8 @@ export async function GET(request) {
   try {
     const { searchParams } = new URL(request.url);
     const status_ketersediaan = searchParams.get("status_ketersediaan");
+    const status_user = searchParams.get("status_user");
+    const include_all = searchParams.get("include_all") === "true";
     const search = searchParams.get("search");
 
     let sql = `
@@ -34,6 +36,14 @@ export async function GET(request) {
       WHERE 1=1
     `;
     const params = [];
+
+    // Jika dipanggil oleh publik / booking (tanpa include_all), hanya tampilkan teknisi yang status user-nya 'aktif'
+    if (status_user) {
+      sql += " AND u.status = ?";
+      params.push(status_user);
+    } else if (!include_all) {
+      sql += " AND u.status = 'aktif'";
+    }
 
     if (status_ketersediaan) {
       sql += " AND t.status_ketersediaan = ?";
